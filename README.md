@@ -1,4 +1,13 @@
-# personal-health-mcp
+# Health Insights MCP Server
+
+[![CI](https://github.com/adamconde/personal-health-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/adamconde/personal-health-mcp/actions/workflows/ci.yml)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![MCP](https://img.shields.io/badge/MCP-Model_Context_Protocol-1f6feb)](https://modelcontextprotocol.io)
+[![Built with FastMCP](https://img.shields.io/badge/built%20with-FastMCP-4B32C3)](https://github.com/jlowin/fastmcp)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Checked with mypy](https://img.shields.io/badge/mypy-checked-2A6DB2)](https://mypy-lang.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](#license)
 
 A **self-hosted, single-user MCP server** that aggregates your personal health
 data from **Google Health**, **Oura**, and **Withings** behind one normalized,
@@ -8,6 +17,33 @@ changes to the core.
 It exposes [Model Context Protocol](https://modelcontextprotocol.io) tools
 (over Streamable HTTP, reachable from Claude Desktop or any MCP client on another
 machine) and a small web UI for managing provider connections and preferences.
+
+## Table of contents
+
+- [Health Insights MCP Server](#health-insights-mcp-server)
+  - [Table of contents](#table-of-contents)
+  - [What it does](#what-it-does)
+  - [Architecture at a glance](#architecture-at-a-glance)
+  - [Prerequisites](#prerequisites)
+  - [Quick start](#quick-start)
+  - [Configuration](#configuration)
+  - [Provider setup (OAuth apps)](#provider-setup-oauth-apps)
+  - [Install: from GHCR or build locally](#install-from-ghcr-or-build-locally)
+    - [Sample `docker-compose.yml`](#sample-docker-composeyml)
+  - [Hosting options (pick one)](#hosting-options-pick-one)
+    - [Option A — Cloudflare Tunnel (no open ports)](#option-a--cloudflare-tunnel-no-open-ports)
+    - [Option B — Caddy reverse proxy (Let's Encrypt)](#option-b--caddy-reverse-proxy-lets-encrypt)
+    - [Option C — LAN / development](#option-c--lan--development)
+  - [Connecting MCP clients](#connecting-mcp-clients)
+    - [Tools](#tools)
+    - [Web UI pages](#web-ui-pages)
+  - [Operations](#operations)
+  - [Security](#security)
+  - [Adding a new provider](#adding-a-new-provider)
+  - [Development](#development)
+  - [Project layout](#project-layout)
+  - [Version history](#version-history)
+  - [License](#license)
 
 ## What it does
 
@@ -32,7 +68,7 @@ machine) and a small web UI for managing provider connections and preferences.
 
 ## Architecture at a glance
 
-```
+```text
 MCP clients (Claude Desktop, …) ──HTTPS──▶ [ Cloudflare Tunnel  OR  Caddy ]
                                                       │  (TLS terminated here)
                                                       ▼  http (internal docker net)
@@ -122,8 +158,8 @@ Replace `health.example.com` with your domain.
 | Provider          | Developer console                                                         | Redirect URI                                         | Scopes                                                                                                         |
 | ----------------- | ------------------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | **Google Health** | Google Cloud Console → APIs & Services → Credentials → OAuth client (Web) | `https://health.example.com/oauth/google/callback`   | `…/googlehealth.activity_and_fitness.readonly`, `…health_metrics_and_measurements.readonly`, `…sleep.readonly` |
-| **Oura**          | https://cloud.ouraring.com → OAuth applications                           | `https://health.example.com/oauth/oura/callback`     | `daily heartrate personal workout session spo2Daily`                                                           |
-| **Withings**      | https://developer.withings.com → your app                                 | `https://health.example.com/oauth/withings/callback` | `user.info,user.metrics,user.activity,user.sleepevents`                                                        |
+| **Oura**          | <https://cloud.ouraring.com> → OAuth applications                         | `https://health.example.com/oauth/oura/callback`     | `daily heartrate personal workout session spo2Daily`                                                           |
+| **Withings**      | <https://developer.withings.com> → your app                               | `https://health.example.com/oauth/withings/callback` | `user.info,user.metrics,user.activity,user.sleepevents`                                                        |
 
 Notes:
 
@@ -205,6 +241,7 @@ Free on a Cloudflare account; you only need a domain added to Cloudflare.
    `health.example.com` → `http://app:8000`.
 4. In `.env`: set `CF_TUNNEL_TOKEN=…` and `PUBLIC_BASE_URL=https://health.example.com`.
 5. Launch:
+
    ```bash
    docker compose -f deploy/docker-compose.yml -f deploy/compose.cloudflared.yml up -d
    ```
@@ -220,6 +257,7 @@ For when you can port-forward.
 3. In `.env`: set `CADDY_DOMAIN=health.example.com` and
    `PUBLIC_BASE_URL=https://health.example.com`.
 4. Launch:
+
    ```bash
    docker compose -f deploy/docker-compose.yml -f deploy/compose.caddy.yml up -d
    ```
@@ -359,7 +397,7 @@ make run          # run locally on :8000
 
 ## Project layout
 
-```
+```text
 src/personal_health_mcp/
   server.py        # ASGI root: mounts /mcp (bearer) + web UI; uvicorn factory
   app.py           # wiring of shared services (AppContext)
