@@ -68,6 +68,22 @@ async def test_credentials_secret_encrypted_and_update_without_secret(store: Sto
     assert creds == ("client-id-2", "client-secret-1")
 
 
+async def test_init_models_with_url_override_does_not_create_settings_dir(
+    crypto: Crypto, tmp_path, enc_key: str
+):
+    # An explicit database_url owns its location; init_models must NOT try to
+    # create settings.database_path's parent (which on CI is an unwritable /data).
+    unwritable = tmp_path / "should-not-be-created" / "health.db"
+    settings = Settings(token_enc_key=enc_key, database_path=str(unwritable))
+    db_url = f"sqlite+aiosqlite:///{tmp_path / 'real.db'}"
+    s = Store(settings=settings, crypto=crypto, database_url=db_url)
+    await s.init_models()
+    try:
+        assert not (tmp_path / "should-not-be-created").exists()
+    finally:
+        await s.dispose()
+
+
 async def test_resolve_credentials_prefers_db_then_env(crypto: Crypto, tmp_path, enc_key: str):
     settings = Settings(
         token_enc_key=enc_key,

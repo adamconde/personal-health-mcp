@@ -116,6 +116,10 @@ class Store:
     ) -> None:
         self._settings = settings
         self._crypto = crypto
+        # Only manage the on-disk directory when the URL is derived from
+        # settings.database_path; an explicit database_url (e.g. tests) owns its
+        # own location, so we must not mkdir settings.database_path's parent.
+        self._manage_db_dir = database_url is None
         url = database_url or f"sqlite+aiosqlite:///{settings.database_path}"
         self._engine = create_async_engine(url, future=True)
         self._session: async_sessionmaker[AsyncSession] = async_sessionmaker(
@@ -126,7 +130,7 @@ class Store:
     async def init_models(self) -> None:
         """Create tables if absent and enable WAL journaling."""
         path = self._settings.database_path
-        if path and path != ":memory:":
+        if self._manage_db_dir and path and path != ":memory:":
             parent = os.path.dirname(path)
             if parent:
                 os.makedirs(parent, exist_ok=True)
