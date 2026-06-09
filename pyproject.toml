@@ -52,6 +52,9 @@ packages = ["src/personal_health_mcp"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-q"
+# Put the repo root on sys.path so shared test helpers import as `tests.fakes`
+# regardless of how pytest is launched (bare `pytest` vs `python -m pytest`).
+pythonpath = ["."]
 
 [tool.coverage.run]
 source = ["personal_health_mcp"]
