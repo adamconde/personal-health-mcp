@@ -1,0 +1,19 @@
+# Overlay: expose the app via a Cloudflare Tunnel (no open inbound ports).
+#
+#   docker compose -f docker-compose.yml -f compose.cloudflared.yml up -d
+#
+# Prereqs:
+#   1. A domain added to your (free) Cloudflare account.
+#   2. A *named* tunnel; put its token in .env as CF_TUNNEL_TOKEN.
+#   3. In the Zero Trust dashboard, route your hostname (e.g. health.example.com)
+#      to the service URL  http://app:8000.
+# Cloudflare terminates TLS at its edge; PUBLIC_BASE_URL must be that hostname.
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CF_TUNNEL_TOKEN}
+    depends_on:
+      - app
+    restart: unless-stopped

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Providers — Health MCP{% endblock %}
+{% block content %}
+<h1>Providers</h1>
+{% if saved %}<div class="banner" role="status">Saved.</div>{% endif %}
+<p class="body-medium muted">Enter each provider's OAuth client credentials, then connect. Register the
+redirect URI shown below in the provider's developer console <em>exactly</em>.</p>
+
+{% for p in providers %}
+<div class="card card--elevated">
+  <div class="card__header">
+    <h2>{{ p.display_name }}</h2>
+    <div class="row row--center" style="gap:.5rem;">
+      {% if p.connected %}<span class="chip chip--ok">connected</span>{% else %}<span class="chip chip--neutral">disconnected</span>{% endif %}
+      {% if p.secret_configured %}<span class="chip chip--ok">secret set</span>{% else %}<span class="chip chip--error">no secret</span>{% endif %}
+    </div>
+  </div>
+  {% if p.last_error %}<div class="banner banner--error">{{ p.last_error }}</div>{% endif %}
+  <p class="body-medium muted">Redirect URI: <code>{{ p.redirect_uri }}</code><br>
+     Scopes: <code>{{ p.scopes | join(" ") }}</code></p>
+
+  <form method="post" action="/providers/{{ p.name }}/credentials" class="stack">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="row">
+      <div class="field grow">
+        <input id="cid-{{ p.name }}" name="client_id" value="{{ p.client_id }}" placeholder=" " autocomplete="off">
+        <label for="cid-{{ p.name }}">Client ID</label>
+      </div>
+      <div class="field grow">
+        <input id="sec-{{ p.name }}" name="client_secret" type="password" placeholder=" " autocomplete="new-password">
+        <label for="sec-{{ p.name }}">Client secret {% if p.secret_configured %}(leave blank to keep){% endif %}</label>
+      </div>
+    </div>
+    <div class="actions"><button class="btn" type="submit">Save credentials</button></div>
+  </form>
+
+  <div class="actions">
+    <form method="post" action="/oauth/{{ p.name }}/start">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn btn--tonal" type="submit" {% if not p.credentials_ready %}disabled title="Save credentials first"{% endif %}>
+        {{ "Reconnect" if p.connected else "Connect" }}
+      </button>
+    </form>
+    {% if p.connected %}
+    <form method="post" action="/providers/{{ p.name }}/disconnect">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn btn--error" type="submit">Disconnect</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Units — Health MCP{% endblock %}
+{% block content %}
+<h1>Display units</h1>
+{% if saved %}<div class="banner" role="status">Saved.</div>{% endif %}
+<p class="body-medium muted">Choose the units metrics are returned in. When a provider can't deliver a unit
+natively, the server converts.</p>
+<div class="card card--elevated">
+  <form method="post" action="/units" class="stack">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="row">
+      {% for g in groups %}
+      <div class="field field--select field--floated grow">
+        <select id="unit-{{ g.group }}" name="{{ g.group }}">
+          {% for choice in g.choices %}<option value="{{ choice }}" {{ 'selected' if g.current == choice }}>{{ choice }}</option>{% endfor %}
+        </select>
+        <label for="unit-{{ g.group }}">{{ g.group | capitalize }}</label>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="actions"><button class="btn" type="submit">Save units</button></div>
+  </form>
+</div>
+{% endblock %}

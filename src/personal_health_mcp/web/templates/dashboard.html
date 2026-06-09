@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Health MCP{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+
+<div class="card card--elevated">
+  <div class="card__header"><h2>Providers</h2><a class="body-medium" href="/providers">Manage →</a></div>
+  <table class="table">
+    <tr><th>Provider</th><th>Credentials</th><th>Status</th><th>Metrics</th><th>Last sync</th></tr>
+    {% for p in providers %}
+    <tr>
+      <td class="title-medium">{{ p.display_name }}</td>
+      <td>{% if p.credentials_ready %}<span class="chip chip--ok">configured</span>{% else %}<span class="chip chip--error">missing</span>{% endif %}</td>
+      <td>{% if p.connected %}<span class="chip chip--ok">connected</span>{% else %}<span class="chip chip--neutral">disconnected</span>{% endif %}
+          {% if p.last_error %}<div class="body-medium text-error">{{ p.last_error }}</div>{% endif %}</td>
+      <td>{{ p.metric_count }}</td>
+      <td class="muted body-medium">{{ p.last_sync or "—" }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card card--elevated">
+  <div class="card__header"><h2>Display units</h2><a class="body-medium" href="/units">Change →</a></div>
+  <div class="row row--center">
+    {% for group, unit in unit_prefs.items() %}<span class="chip chip--neutral">{{ group }}: {{ unit }}</span>{% endfor %}
+  </div>
+  <p class="body-medium"><a href="/metrics">Resolution preferences →</a></p>
+</div>
+
+<div class="card card--outlined">
+  <h2>MCP endpoint</h2>
+  <p class="body-medium muted">Connect MCP clients to <code>{{ base_url }}/mcp</code> with a bearer token.</p>
+</div>
+{% endblock %}

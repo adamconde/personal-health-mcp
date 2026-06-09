@@ -1,0 +1,24 @@
+# Base compose: the app + its data volume only.
+# The app is NOT published to the host — expose it with one of the overlays:
+#   Cloudflare Tunnel:  docker compose -f docker-compose.yml -f compose.cloudflared.yml up -d
+#   Caddy reverse-proxy: docker compose -f docker-compose.yml -f compose.caddy.yml up -d
+#
+# To pull a prebuilt image instead of building, set IMAGE and remove `build:`.
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: ${IMAGE:-personal-health-mcp:local}
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_PATH: /data/health.db
+    expose:
+      - "8000" # internal network only; never `ports:` here
+    volumes:
+      - health-data:/data
+    restart: unless-stopped
+
+volumes:
+  health-data:
