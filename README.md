@@ -27,7 +27,7 @@ machine) and a small web UI for managing provider connections and preferences.
   temperature, blood pressure/glucose, and more — including metrics only one
   provider supplies.
 - **Single user, self-hosted.** No multi-tenant support by design. The
-  preferences page *is* your preferences. If someone else wants it, they host
+  preferences page _is_ your preferences. If someone else wants it, they host
   their own.
 
 ## Architecture at a glance
@@ -67,7 +67,7 @@ for the provider abstraction, resolution engine, and unit layer.
 ## Quick start
 
 ```bash
-git clone https://github.com/OWNER/personal-health-mcp.git
+git clone https://github.com/adamconde/personal-health-mcp.git
 cd personal-health-mcp
 cp .env.example .env        # then fill it in (see Configuration)
 # pick ONE hosting overlay (see Hosting options):
@@ -91,20 +91,20 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-| Variable | Required | Description |
-|---|---|---|
-| `PUBLIC_BASE_URL` | ✅ | External HTTPS origin, no trailing slash (e.g. `https://health.example.com`). Used to build OAuth redirect URIs. |
-| `MCP_AUTH_TOKEN` | ✅ | Bearer token MCP clients must send. |
-| `WEB_PASSWORD` | ✅ | Single-user web UI password (hashed with argon2id at boot; never stored in plaintext). |
-| `SESSION_SECRET` | ✅ | Signs session cookies. |
-| `TOKEN_ENC_KEY` | ✅ | Fernet key encrypting tokens & client secrets at rest. Comma-separate multiple keys (newest first) to rotate. |
-| `DATABASE_PATH` | – | SQLite path (default `/data/health.db`). |
-| `LOG_LEVEL` | – | `debug`/`info`/`warning`/`error`. |
-| `CADDY_DOMAIN` | Caddy | Domain Caddy serves + gets a cert for. |
-| `CF_TUNNEL_TOKEN` | Cloudflare | Named-tunnel token. |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | optional | Headless fallback — normally set in the UI. |
-| `OURA_CLIENT_ID` / `OURA_CLIENT_SECRET` | optional | Headless fallback. |
-| `WITHINGS_CLIENT_ID` / `WITHINGS_CLIENT_SECRET` | optional | Headless fallback. |
+| Variable                                        | Required   | Description                                                                                                      |
+| ----------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------- |
+| `PUBLIC_BASE_URL`                               | ✅         | External HTTPS origin, no trailing slash (e.g. `https://health.example.com`). Used to build OAuth redirect URIs. |
+| `MCP_AUTH_TOKEN`                                | ✅         | Bearer token MCP clients must send.                                                                              |
+| `WEB_PASSWORD`                                  | ✅         | Single-user web UI password (hashed with argon2id at boot; never stored in plaintext).                           |
+| `SESSION_SECRET`                                | ✅         | Signs session cookies.                                                                                           |
+| `TOKEN_ENC_KEY`                                 | ✅         | Fernet key encrypting tokens & client secrets at rest. Comma-separate multiple keys (newest first) to rotate.    |
+| `DATABASE_PATH`                                 | –          | SQLite path (default `/data/health.db`).                                                                         |
+| `LOG_LEVEL`                                     | –          | `debug`/`info`/`warning`/`error`.                                                                                |
+| `CADDY_DOMAIN`                                  | Caddy      | Domain Caddy serves + gets a cert for.                                                                           |
+| `CF_TUNNEL_TOKEN`                               | Cloudflare | Named-tunnel token.                                                                                              |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`     | optional   | Headless fallback — normally set in the UI.                                                                      |
+| `OURA_CLIENT_ID` / `OURA_CLIENT_SECRET`         | optional   | Headless fallback.                                                                                               |
+| `WITHINGS_CLIENT_ID` / `WITHINGS_CLIENT_SECRET` | optional   | Headless fallback.                                                                                               |
 
 > **Provider API credentials are normally entered in the web UI** (`/providers`)
 > and stored encrypted. The `*_CLIENT_*` env vars are only an optional
@@ -119,13 +119,14 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 Create an OAuth app with each provider and register the **exact** redirect URI.
 Replace `health.example.com` with your domain.
 
-| Provider | Developer console | Redirect URI | Scopes |
-|---|---|---|---|
-| **Google Health** | Google Cloud Console → APIs & Services → Credentials → OAuth client (Web) | `https://health.example.com/oauth/google/callback` | `…/googlehealth.activity_and_fitness.readonly`, `…health_metrics_and_measurements.readonly`, `…sleep.readonly` |
-| **Oura** | https://cloud.ouraring.com → OAuth applications | `https://health.example.com/oauth/oura/callback` | `daily heartrate personal workout session spo2Daily` |
-| **Withings** | https://developer.withings.com → your app | `https://health.example.com/oauth/withings/callback` | `user.info,user.metrics,user.activity,user.sleepevents` |
+| Provider          | Developer console                                                         | Redirect URI                                         | Scopes                                                                                                         |
+| ----------------- | ------------------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| **Google Health** | Google Cloud Console → APIs & Services → Credentials → OAuth client (Web) | `https://health.example.com/oauth/google/callback`   | `…/googlehealth.activity_and_fitness.readonly`, `…health_metrics_and_measurements.readonly`, `…sleep.readonly` |
+| **Oura**          | https://cloud.ouraring.com → OAuth applications                           | `https://health.example.com/oauth/oura/callback`     | `daily heartrate personal workout session spo2Daily`                                                           |
+| **Withings**      | https://developer.withings.com → your app                                 | `https://health.example.com/oauth/withings/callback` | `user.info,user.metrics,user.activity,user.sleepevents`                                                        |
 
 Notes:
+
 - The redirect URI must match **byte-for-byte** what the server uses
   (`PUBLIC_BASE_URL` + `/oauth/<provider>/callback`).
 - Google requires consent screen configuration and returns a refresh token only
@@ -144,7 +145,7 @@ and click **Connect** to run the OAuth flow.
 reference it):
 
 ```bash
-docker pull ghcr.io/OWNER/personal-health-mcp:latest
+docker pull ghcr.io/adamconde/personal-health-mcp:latest
 ```
 
 **Or build locally** (default in the compose files):
@@ -160,11 +161,11 @@ A complete single-file example (Caddy variant). Adjust the image/domain:
 ```yaml
 services:
   app:
-    image: ghcr.io/OWNER/personal-health-mcp:latest
+    image: ghcr.io/adamconde/personal-health-mcp:latest
     env_file: [.env]
     environment:
       DATABASE_PATH: /data/health.db
-    expose: ["8000"]            # internal only — never publish to the host
+    expose: ["8000"] # internal only — never publish to the host
     volumes: ["health-data:/data"]
     restart: unless-stopped
 
@@ -251,9 +252,9 @@ Point any MCP client at `https://<your-domain>/mcp` with the bearer token.
     "personal-health": {
       "type": "streamableHttp",
       "url": "https://health.example.com/mcp",
-      "headers": { "Authorization": "Bearer YOUR_MCP_AUTH_TOKEN" }
-    }
-  }
+      "headers": { "Authorization": "Bearer YOUR_MCP_AUTH_TOKEN" },
+    },
+  },
 }
 ```
 
@@ -264,29 +265,33 @@ If your client lacks native remote Streamable HTTP, bridge over stdio:
   "mcpServers": {
     "personal-health": {
       "command": "npx",
-      "args": ["mcp-remote", "https://health.example.com/mcp",
-               "--header", "Authorization: Bearer YOUR_MCP_AUTH_TOKEN"]
-    }
-  }
+      "args": [
+        "mcp-remote",
+        "https://health.example.com/mcp",
+        "--header",
+        "Authorization: Bearer YOUR_MCP_AUTH_TOKEN",
+      ],
+    },
+  },
 }
 ```
 
 ### Tools
 
-| Tool | Purpose |
-|---|---|
-| `health_list_providers` | Providers and their connection status. |
-| `health_provider_auth_status` | Whether a provider is connected/usable. |
-| `health_list_metrics` | Metrics available from connected providers. |
-| `health_get_metric` | A metric over a date range, resolved (provider named per point). |
-| `health_compare_metric` | A metric from every provider side-by-side (unresolved). |
-| `health_get_sleep` | Composite sleep summary for a night. |
-| `health_get_daily_summary` | Multi-metric summary for a day. |
-| `health_set_metric_authority` | Set a metric's resolution preference. |
+| Tool                          | Purpose                                                          |
+| ----------------------------- | ---------------------------------------------------------------- |
+| `health_list_providers`       | Providers and their connection status.                           |
+| `health_provider_auth_status` | Whether a provider is connected/usable.                          |
+| `health_list_metrics`         | Metrics available from connected providers.                      |
+| `health_get_metric`           | A metric over a date range, resolved (provider named per point). |
+| `health_compare_metric`       | A metric from every provider side-by-side (unresolved).          |
+| `health_get_sleep`            | Composite sleep summary for a night.                             |
+| `health_get_daily_summary`    | Multi-metric summary for a day.                                  |
+| `health_set_metric_authority` | Set a metric's resolution preference.                            |
 
-Example prompts: *“What was my weight last week, in pounds?”*, *“Compare my step
-count across providers for yesterday.”*, *“Make Withings the authority for
-weight, falling back to Google.”*
+Example prompts: _“What was my weight last week, in pounds?”_, _“Compare my step
+count across providers for yesterday.”_, _“Make Withings the authority for
+weight, falling back to Google.”_
 
 ### Web UI pages
 
@@ -306,10 +311,10 @@ weight, falling back to Google.”*
   Once everything is re-encrypted you can drop the old key.
 - **Upgrades:** `docker compose … pull && docker compose … up -d`.
 - **Troubleshooting:**
-  - *401 from `/mcp`* → check the `Authorization: Bearer` header / `MCP_AUTH_TOKEN`.
-  - *Redirect-URI mismatch* → the registered URI must equal
+  - _401 from `/mcp`_ → check the `Authorization: Bearer` header / `MCP_AUTH_TOKEN`.
+  - _Redirect-URI mismatch_ → the registered URI must equal
     `PUBLIC_BASE_URL` + `/oauth/<provider>/callback` exactly.
-  - *Token refresh failed / reconnect prompt* → re-connect the provider on the
+  - _Token refresh failed / reconnect prompt_ → re-connect the provider on the
     Providers page (e.g. credentials changed or refresh token revoked).
 
 ---
