@@ -26,4 +26,4 @@ docker-build:
 	docker build -f deploy/Dockerfile -t personal-health-mcp:local .
 
 compose-up:
-	docker compose -f deploy/docker-compose.yml -f deploy/compose.caddy.yml up -d
+	docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/compose.caddy.yml up -d

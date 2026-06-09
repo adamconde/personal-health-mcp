@@ -1,6 +1,8 @@
 # Overlay: expose the app via Caddy with automatic Let's Encrypt TLS.
 #
-#   docker compose -f docker-compose.yml -f compose.caddy.yml up -d
+#   docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/compose.caddy.yml up -d
+#   (run from the repo root; --env-file .env is required so ${CADDY_DOMAIN}
+#    interpolates from your repo-root .env, not from this file's directory)
 #
 # Prereqs:
 #   1. A domain whose A/AAAA record points at this host.

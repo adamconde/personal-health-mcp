@@ -4,16 +4,28 @@
 #
 # Prereqs:
 #   1. A domain added to your (free) Cloudflare account.
-#   2. A *named* tunnel; put its token in .env as CF_TUNNEL_TOKEN.
+#   2. A *token-managed* (dashboard) tunnel. Copy its long connector token into
+#      your repo-root .env as CF_TUNNEL_TOKEN. The token is NOT the tunnel UUID
+#      or name — it's the base64-ish string from the "Install connector" screen
+#      (or `cloudflared tunnel token <NAME>`).
 #   3. In the Zero Trust dashboard, route your hostname (e.g. health.example.com)
 #      to the service URL  http://app:8000.
 # Cloudflare terminates TLS at its edge; PUBLIC_BASE_URL must be that hostname.
+#
+# Run from the REPO ROOT with --env-file .env. The flag is REQUIRED: Compose's
+# ${CF_TUNNEL_TOKEN} interpolation otherwise loads .env from this file's
+# directory (deploy/), not your cwd, so the token resolves empty.
+#   docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/compose.cloudflared.yml up -d
 services:
   cloudflared:
     image: cloudflare/cloudflared:latest
+    # `tunnel run` reads the connector token from TUNNEL_TOKEN. If the token is
+    # empty/unset, cloudflared falls back to expecting a tunnel name and errors
+    # with "requires the ID or name of the tunnel". The `:?` guard makes
+    # `docker compose up` fail with a clear message in that case instead.
     command: tunnel --no-autoupdate run
     environment:
-      TUNNEL_TOKEN: ${CF_TUNNEL_TOKEN}
+      - "TUNNEL_TOKEN=${CF_TUNNEL_TOKEN:?CF_TUNNEL_TOKEN did not resolve. Set it in your repo-root .env AND run compose with --env-file .env from the repo root (interpolation reads .env from this file's dir, not your cwd).}"
     depends_on:
       - app
     restart: unless-stopped

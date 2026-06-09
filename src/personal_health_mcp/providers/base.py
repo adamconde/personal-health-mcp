@@ -87,6 +87,9 @@ class HealthProvider(ABC):
     name: ClassVar[str] = ""
     display_name: ClassVar[str] = ""
     oauth: ClassVar[OAuthConfig]
+    # Developer-console URL where the user obtains this provider's OAuth client
+    # id/secret. Surfaced as a help link on the web UI Providers page.
+    credentials_url: ClassVar[str] = ""
 
     # ── capability declaration ───────────────────────────────────────────
     @abstractmethod

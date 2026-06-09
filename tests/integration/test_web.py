@@ -79,6 +79,20 @@ async def test_security_headers_present(web):
     assert "default-src 'self'" in resp.headers["Content-Security-Policy"]
 
 
+async def test_csp_form_action_allows_oauth_origins(web):
+    # form-action must list each provider's authorize origin, else browsers
+    # block the Connect redirect (form POST -> 303 to the vendor).
+    client, _ctx = web
+    csp = (await client.get("/healthz")).headers["Content-Security-Policy"]
+    assert "form-action 'self'" in csp
+    for origin in (
+        "https://accounts.google.com",
+        "https://cloud.ouraring.com",
+        "https://account.withings.com",
+    ):
+        assert origin in csp
+
+
 async def test_csrf_rejected_on_post(web):
     client, _ctx = web
     await _login(client)
@@ -151,6 +165,18 @@ async def test_set_metric_pref_persists(web):
     assert pref.mode.value == "authority"
     assert pref.authority == "withings"
     assert pref.fallback_order == ["google", "oura"]
+
+
+async def test_oauth_start_returns_interstitial_not_cross_origin_redirect(web):
+    # Must be a 200 interstitial (document navigation), not a 303 to the vendor,
+    # so CSP form-action never blocks the provider's redirect chain.
+    client, ctx = web
+    await ctx.store.set_credentials("oura", "cid", "secret")
+    csrf = await _login(client)
+    resp = await client.post("/oauth/oura/start", data={"csrf": csrf})
+    assert resp.status_code == 200
+    assert 'http-equiv="refresh"' in resp.text
+    assert "cloud.ouraring.com/oauth/authorize" in resp.text
 
 
 async def test_oauth_callback_state_mismatch_is_rejected(web):

@@ -26,6 +26,7 @@ def crypto(enc_key: str) -> Crypto:
 def settings(enc_key: str) -> Settings:
     """Settings with no env provider credentials by default."""
     return Settings(
+        _env_file=None,  # never read a developer's real .env in tests
         public_base_url="https://health.test",
         mcp_auth_token="test-mcp-token",
         web_password="hunter2",

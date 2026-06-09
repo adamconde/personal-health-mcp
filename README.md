@@ -107,12 +107,18 @@ git clone https://github.com/adamconde/personal-health-mcp.git
 cd personal-health-mcp
 cp .env.example .env        # then fill it in (see Configuration)
 # pick ONE hosting overlay (see Hosting options):
-docker compose -f deploy/docker-compose.yml -f deploy/compose.caddy.yml up -d
+docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/compose.caddy.yml up -d
 ```
 
 Open `https://<your-domain>/`, log in with `WEB_PASSWORD`, go to **Providers**,
 enter each provider's client id/secret, click **Connect**, then set your
 **Metrics** and **Units** preferences.
+
+> **Always pass `--env-file .env` and run from the repo root.** Compose's
+> `${VAR}` interpolation (used by the overlays for `CF_TUNNEL_TOKEN` /
+> `CADDY_DOMAIN`) loads its `.env` from the **compose file's directory**
+> (`deploy/`), not your shell's working directory — so without `--env-file .env`
+> those variables resolve empty even though your repo-root `.env` is correct.
 
 ---
 
@@ -130,7 +136,9 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 | Variable                                        | Required   | Description                                                                                                      |
 | ----------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------- |
 | `PUBLIC_BASE_URL`                               | ✅         | External HTTPS origin, no trailing slash (e.g. `https://health.example.com`). Used to build OAuth redirect URIs. |
-| `MCP_AUTH_TOKEN`                                | ✅         | Bearer token MCP clients must send.                                                                              |
+| `MCP_AUTH_TOKEN`                                | ✅         | Bearer token MCP clients must send (unless GitHub OAuth is configured below).                                    |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`     | optional   | Set both to protect `/mcp` with GitHub OAuth instead of the bearer token.                                        |
+| `GITHUB_ALLOWED_USERS`                          | optional   | Comma-separated GitHub logins allowed when GitHub OAuth is on (set it — blank = any account).                    |
 | `WEB_PASSWORD`                                  | ✅         | Single-user web UI password (hashed with argon2id at boot; never stored in plaintext).                           |
 | `SESSION_SECRET`                                | ✅         | Signs session cookies.                                                                                           |
 | `TOKEN_ENC_KEY`                                 | ✅         | Fernet key encrypting tokens & client secrets at rest. Comma-separate multiple keys (newest first) to rotate.    |
@@ -158,7 +166,7 @@ Replace `health.example.com` with your domain.
 | Provider          | Developer console                                                         | Redirect URI                                         | Scopes                                                                                                         |
 | ----------------- | ------------------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | **Google Health** | Google Cloud Console → APIs & Services → Credentials → OAuth client (Web) | `https://health.example.com/oauth/google/callback`   | `…/googlehealth.activity_and_fitness.readonly`, `…health_metrics_and_measurements.readonly`, `…sleep.readonly` |
-| **Oura**          | <https://cloud.ouraring.com> → OAuth applications                         | `https://health.example.com/oauth/oura/callback`     | `daily heartrate personal workout session spo2Daily`                                                           |
+| **Oura**          | <https://cloud.ouraring.com> → OAuth applications                         | `https://health.example.com/oauth/oura/callback`     | `personal daily heartrate workout session spo2`                                                                |
 | **Withings**      | <https://developer.withings.com> → your app                               | `https://health.example.com/oauth/withings/callback` | `user.info,user.metrics,user.activity,user.sleepevents`                                                        |
 
 Notes:
@@ -243,7 +251,7 @@ Free on a Cloudflare account; you only need a domain added to Cloudflare.
 5. Launch:
 
    ```bash
-   docker compose -f deploy/docker-compose.yml -f deploy/compose.cloudflared.yml up -d
+   docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/compose.cloudflared.yml up -d
    ```
 
 No inbound ports are opened; Cloudflare terminates TLS at its edge.
@@ -259,7 +267,7 @@ For when you can port-forward.
 4. Launch:
 
    ```bash
-   docker compose -f deploy/docker-compose.yml -f deploy/compose.caddy.yml up -d
+   docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/compose.caddy.yml up -d
    ```
 
 Caddy obtains and renews the certificate automatically.
@@ -314,6 +322,40 @@ If your client lacks native remote Streamable HTTP, bridge over stdio:
 }
 ```
 
+### Authenticating with GitHub OAuth (optional)
+
+Instead of the static bearer token, you can protect `/mcp` with **GitHub OAuth**
+— clients do a browser login, and access is restricted to GitHub logins you allow.
+
+**1.** Create a **GitHub OAuth app** (GitHub → Settings → Developer settings →
+OAuth Apps) with **Authorization callback URL** `https://<your-domain>/auth/callback`.
+
+**2.** In `.env` set the following. When both id+secret are present, `/mcp`
+switches from bearer to GitHub OAuth automatically. **Set `GITHUB_ALLOWED_USERS`**
+— otherwise any GitHub account that authorizes the app could reach your data.
+
+```ini
+GITHUB_CLIENT_ID=Ov23li...
+GITHUB_CLIENT_SECRET=...
+GITHUB_ALLOWED_USERS=your-github-login   # comma-separated; restricts access
+```
+
+**3.** Point the client at the URL with **no `Authorization` header** — it
+discovers OAuth and opens a browser login (or use `npx mcp-remote
+https://health.example.com/mcp` with no `--header`):
+
+```jsonc
+{
+  "mcpServers": {
+    "personal-health": { "type": "streamableHttp", "url": "https://health.example.com/mcp" }
+  }
+}
+```
+
+In this mode the server runs the MCP app at the origin root so OAuth discovery
+(`/.well-known/...`) and the callback (`/auth/callback`) resolve correctly; the
+web UI continues to serve at `/`.
+
 ### Tools
 
 | Tool                          | Purpose                                                          |
@@ -359,7 +401,7 @@ weight, falling back to Google.”_
 
 ## Security
 
-- `/mcp` requires a static bearer token; the web UI requires a session login
+- `/mcp` requires a static bearer token (or GitHub OAuth, if configured); the web UI requires a session login
   (argon2id-hashed password). Three distinct secrets (MCP bearer, session key,
   encryption key) — never reuse them.
 - OAuth tokens and client secrets are **encrypted at rest** (Fernet).
@@ -423,9 +465,16 @@ tests/             # unit + integration
 
 ## Version history
 
-- **0.1.0** — Initial release: Google Health, Oura, Withings providers;
-  authority/fallback/auto resolution; unit conversion; MCP tools; Material
-  Design 3 web UI (light/dark); Docker + Cloudflare/Caddy hosting; CI/CD to GHCR.
+- **1.0.0** — First stable release.
+  - Google Health, Oura, and Withings providers behind a canonical, unit-normalized,
+    provider-attributed model with authority/fallback/auto resolution.
+  - MCP tools over Streamable HTTP; auth via a static bearer token **or optional
+    GitHub OAuth** (browser login + GitHub-login allowlist).
+  - Material Design 3 web UI (light/dark) for provider connections and
+    metric/unit preferences, with links to each vendor's credential console.
+  - Docker with Cloudflare Tunnel / Caddy hosting overlays; CI + GHCR release.
+  - Run with `docker compose --env-file .env …` (so Compose interpolates
+    `CF_TUNNEL_TOKEN` / `CADDY_DOMAIN` from the repo-root `.env`).
 
 ## License
 

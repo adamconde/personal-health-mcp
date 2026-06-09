@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <!-- Document navigation (not a form submission), so CSP form-action does not
+       apply to this cross-origin hop or the vendor's redirect chain. -->
+  <meta http-equiv="refresh" content="0; url={{ authorize_url }}">
+  <title>Redirecting to {{ provider }}…</title>
+  <link rel="stylesheet" href="/static/m3.css">
+</head>
+<body>
+  <main class="auth">
+    <div class="auth__card">
+      <div class="card card--elevated">
+        <p class="body-large">Redirecting you to <strong>{{ provider }}</strong> to authorize…</p>
+        <p class="body-medium muted">If you are not redirected automatically, continue below.</p>
+        <p><a class="btn" href="{{ authorize_url }}">Continue to {{ provider }} ↗</a></p>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

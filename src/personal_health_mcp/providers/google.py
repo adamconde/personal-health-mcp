@@ -85,6 +85,7 @@ class GoogleHealthProvider(HealthProvider):
 
     name = "google"
     display_name = "Google Health"
+    credentials_url = "https://console.cloud.google.com/apis/credentials"
     oauth = OAuthConfig(
         authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
         token_url="https://oauth2.googleapis.com/token",

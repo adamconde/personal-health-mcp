@@ -50,10 +50,11 @@ class OuraProvider(HealthProvider):
 
     name = "oura"
     display_name = "Oura"
+    credentials_url = "https://cloud.ouraring.com/oauth/applications"
     oauth = OAuthConfig(
         authorize_url="https://cloud.ouraring.com/oauth/authorize",
         token_url="https://api.ouraring.com/oauth/token",
-        scopes=["daily", "heartrate", "personal", "workout", "session", "spo2Daily"],
+        scopes=["personal", "daily", "heartrate", "workout", "session", "spo2"],
         use_pkce=True,
     )
 

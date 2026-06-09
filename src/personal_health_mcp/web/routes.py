@@ -111,7 +111,14 @@ def create_web_routes(ctx: AppContext) -> list[BaseRoute]:
 
     # ── OAuth ────────────────────────────────────────────────────────────
     async def oauth_start(request: Request) -> Response:
-        """Begin the OAuth flow: store state/PKCE in session, redirect to vendor."""
+        """Begin the OAuth flow: store state/PKCE in session, then hand off to vendor.
+
+        Returns a small interstitial page that navigates to the vendor via
+        ``<meta refresh>`` + a link, rather than a cross-origin 303. A 303 from
+        this form POST is checked against the page's CSP ``form-action`` for
+        *every* hop in the vendor's redirect chain (which is unpredictable);
+        a document navigation is not, so this works for any provider.
+        """
         if not request.session.get("authenticated"):
             return RedirectResponse("/login", status_code=303)
         provider = request.path_params["provider"]
@@ -130,7 +137,14 @@ def create_web_routes(ctx: AppContext) -> list[BaseRoute]:
             "state": start.state,
             "code_verifier": start.code_verifier,
         }
-        return RedirectResponse(start.authorize_url, status_code=303)
+        return _TEMPLATES.TemplateResponse(
+            request,
+            "oauth_redirect.html",
+            {
+                "authorize_url": start.authorize_url,
+                "provider": ctx.providers[provider].display_name,
+            },
+        )
 
     async def oauth_callback(request: Request) -> Response:
         """Handle the OAuth redirect: verify state, exchange code, store tokens."""
@@ -276,6 +290,7 @@ async def _provider_rows(ctx: AppContext) -> list[dict]:
                 "last_error": status.last_error if status else None,
                 "scopes": provider.oauth.scopes,
                 "redirect_uri": ctx.settings.redirect_uri(name),
+                "credentials_url": provider.credentials_url,
                 "metric_count": len(provider.supported_metrics()),
             }
         )

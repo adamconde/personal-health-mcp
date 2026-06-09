@@ -17,18 +17,42 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 
-# Paths (prefixes) that never require a UI session.
-_OPEN_PREFIXES = ("/mcp", "/healthz", "/login", "/static", "/oauth")
+# Web-UI pages that require a logged-in session. We guard by allowlist (not
+# denylist): only these are protected, so the FastMCP MCP + OAuth endpoints
+# (/mcp, /authorize, /token, /register, /revoke, /.well-known, /auth/callback)
+# and public pages (/login, /static, /healthz) always pass through. The OAuth
+# *start* routes under /oauth/* enforce their own session check internally.
+_GUARDED_EXACT = frozenset({"/"})
+_GUARDED_PREFIXES = ("/providers", "/metrics", "/units")
 
-# Server-rendered, no inline scripts needed -> a strict CSP is feasible.
-_CSP = (
-    "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
-    "script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
-)
+def _build_csp(form_action_origins: list[str]) -> str:
+    """Build the CSP. ``form_action_origins`` are extra origins allowed as the
+    target of form submissions (e.g. provider OAuth authorize endpoints).
+
+    Browsers enforce ``form-action`` on the redirect that results from a form
+    POST, so the OAuth "Connect" flow (POST -> 303 to the vendor) requires the
+    vendor's authorize origin here, or the redirect is silently blocked.
+    """
+    form_action = " ".join(["'self'", *form_action_origins])
+    return (
+        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+        "script-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
+        f"form-action {form_action}"
+    )
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Attach hardening headers to every response."""
+    """Attach hardening headers to every response.
+
+    Args:
+        app: The wrapped ASGI app.
+        form_action_origins: Extra origins to allow in CSP ``form-action`` (the
+            providers' OAuth authorize origins). Defaults to none (strict ``'self'``).
+    """
+
+    def __init__(self, app, form_action_origins: list[str] | None = None) -> None:
+        super().__init__(app)
+        self._csp = _build_csp(form_action_origins or [])
 
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
@@ -37,7 +61,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
-        response.headers.setdefault("Content-Security-Policy", _CSP)
+        response.headers.setdefault("Content-Security-Policy", self._csp)
         response.headers.setdefault(
             "Strict-Transport-Security", "max-age=63072000; includeSubDomains"
         )
@@ -56,7 +80,7 @@ class AuthGuardMiddleware(BaseHTTPMiddleware):
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         path = request.url.path
-        guarded = path == "/" or not any(path.startswith(p) for p in _OPEN_PREFIXES)
+        guarded = path in _GUARDED_EXACT or path.startswith(_GUARDED_PREFIXES)
         if guarded and not request.session.get("authenticated"):
             return RedirectResponse("/login", status_code=303)
         return await call_next(request)

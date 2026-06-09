@@ -39,6 +39,7 @@ class WithingsProvider(HealthProvider):
 
     name = "withings"
     display_name = "Withings"
+    credentials_url = "https://developer.withings.com/dashboard/"
     oauth = OAuthConfig(
         authorize_url="https://account.withings.com/oauth2_user/authorize2",
         token_url=TOKEN_URL,

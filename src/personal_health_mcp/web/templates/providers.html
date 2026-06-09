@@ -16,6 +16,11 @@ redirect URI shown below in the provider's developer console <em>exactly</em>.</
     </div>
   </div>
   {% if p.last_error %}<div class="banner banner--error">{{ p.last_error }}</div>{% endif %}
+  {% if p.credentials_url %}
+  <p class="body-medium">Get your client ID &amp; secret from the
+     <a href="{{ p.credentials_url }}" target="_blank" rel="noopener noreferrer">{{ p.display_name }} developer console ↗</a>.
+     Register this exact redirect URI there.</p>
+  {% endif %}
   <p class="body-medium muted">Redirect URI: <code>{{ p.redirect_uri }}</code><br>
      Scopes: <code>{{ p.scopes | join(" ") }}</code></p>
 

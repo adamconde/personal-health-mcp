@@ -59,6 +59,15 @@ class Settings(BaseSettings):
     cf_tunnel_token: str = Field(default="")
     caddy_domain: str = Field(default="")
 
+    # ── MCP endpoint auth via GitHub OAuth (optional) ────────────────────
+    # When both id+secret are set, the /mcp endpoint uses GitHub OAuth instead
+    # of the static MCP_AUTH_TOKEN. github_allowed_users restricts access to
+    # specific GitHub logins (comma-separated); leave blank to allow any
+    # authenticated GitHub account (NOT recommended for personal health data).
+    github_client_id: str = Field(default="")
+    github_client_secret: str = Field(default="")
+    github_allowed_users: str = Field(default="")
+
     @property
     def base_url(self) -> str:
         """Public base URL without a trailing slash."""
@@ -73,6 +82,15 @@ class Settings(BaseSettings):
         cid = getattr(self, f"{provider}_client_id", "")
         secret = getattr(self, f"{provider}_client_secret", "")
         return cid, secret
+
+    @property
+    def mcp_oauth_enabled(self) -> bool:
+        """True if GitHub OAuth should guard the MCP endpoint (vs. bearer token)."""
+        return bool(self.github_client_id and self.github_client_secret)
+
+    def github_allowed_logins(self) -> set[str]:
+        """Return the set of allowed GitHub logins (lowercased; empty = any)."""
+        return {u.strip().lower() for u in self.github_allowed_users.split(",") if u.strip()}
 
 
 @lru_cache
