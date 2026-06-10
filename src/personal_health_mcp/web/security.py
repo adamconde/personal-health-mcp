@@ -17,13 +17,28 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 
-# Web-UI pages that require a logged-in session. We guard by allowlist (not
-# denylist): only these are protected, so the FastMCP MCP + OAuth endpoints
-# (/mcp, /authorize, /token, /register, /revoke, /.well-known, /auth/callback)
-# and public pages (/login, /static, /healthz) always pass through. The OAuth
-# *start* routes under /oauth/* enforce their own session check internally.
-_GUARDED_EXACT = frozenset({"/"})
-_GUARDED_PREFIXES = ("/providers", "/metrics", "/units")
+# Paths that never require a UI session; everything else is guarded by default
+# (secure-by-default: a new UI route is protected unless it's explicitly opened
+# here). The open set is the public web pages (/healthz, /login, /static), the
+# web provider-connect routes under /oauth/* (which enforce their own session
+# check internally), and the FastMCP MCP + OAuth-proxy surface that must reach
+# FastMCP directly in OAuth mode. Forgetting to open one of the latter is a loud
+# failure (the OAuth flow 303s to /login, caught by the auth-passthrough test);
+# forgetting to guard a sensitive route would be a silent one.
+_OPEN_PREFIXES = (
+    "/mcp",
+    "/healthz",
+    "/login",
+    "/static",
+    "/oauth",
+    "/authorize",
+    "/token",
+    "/register",
+    "/revoke",
+    "/consent",
+    "/auth/callback",
+    "/.well-known",
+)
 
 def _build_csp(form_action_origins: list[str]) -> str:
     """Build the CSP. ``form_action_origins`` are extra origins allowed as the
@@ -80,7 +95,7 @@ class AuthGuardMiddleware(BaseHTTPMiddleware):
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         path = request.url.path
-        guarded = path in _GUARDED_EXACT or path.startswith(_GUARDED_PREFIXES)
+        guarded = not path.startswith(_OPEN_PREFIXES)
         if guarded and not request.session.get("authenticated"):
             return RedirectResponse("/login", status_code=303)
         return await call_next(request)

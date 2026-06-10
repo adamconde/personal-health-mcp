@@ -106,7 +106,7 @@ def _ui_middleware(ctx: AppContext) -> list[Middleware]:
         Middleware(SecurityHeadersMiddleware, form_action_origins=_form_action_origins(ctx)),
         Middleware(
             SessionMiddleware,
-            secret_key=ctx.settings.session_secret or "dev-insecure-session-secret",
+            secret_key=ctx.settings.session_secret,  # guaranteed by validate_security()
             https_only=ctx.settings.cookie_secure,
             same_site="lax",
         ),
@@ -123,7 +123,12 @@ def create_asgi_app(ctx: AppContext) -> Starlette:
       * **GitHub OAuth**: the FastMCP app runs at the *root* (so its OAuth
         ``.well-known`` discovery and ``/auth`` callback live at the origin),
         with the web UI routes added alongside and the UI middleware applied.
+
+    Raises:
+        ValueError: If the active mode's required secrets are blank (fail-fast
+            so a misconfigured deployment never serves an open endpoint).
     """
+    ctx.settings.validate_security()
     mcp = build_mcp(ctx)
     if ctx.settings.mcp_oauth_enabled:
         return _create_oauth_app(ctx, mcp)
@@ -170,7 +175,7 @@ def _create_oauth_app(ctx: AppContext, mcp: FastMCP) -> Starlette:
     app.add_middleware(AuthGuardMiddleware)
     app.add_middleware(
         SessionMiddleware,
-        secret_key=ctx.settings.session_secret or "dev-insecure-session-secret",
+        secret_key=ctx.settings.session_secret,  # guaranteed by validate_security()
         https_only=ctx.settings.cookie_secure,
         same_site="lax",
     )

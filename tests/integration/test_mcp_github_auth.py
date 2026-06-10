@@ -58,11 +58,15 @@ async def test_mcp_unauthenticated_is_401_with_resource_metadata(oauth_app):
 
 
 async def test_oauth_endpoints_not_swallowed_by_auth_guard(oauth_app):
-    # /token, /register, /authorize must reach FastMCP, NOT be redirected to
-    # /login by the UI auth guard (the bug that broke the token exchange).
+    # The full FastMCP OAuth-proxy surface must reach FastMCP, NOT be redirected
+    # to /login by the UI auth guard (the bug that broke the token exchange).
+    # Because the guard is secure-by-default (deny unless explicitly opened),
+    # this asserts every OAuth path is in the open set: a missing one fails here.
     for resp in (
         await oauth_app.post("/token", data={"grant_type": "authorization_code"}),
         await oauth_app.post("/register", json={}),
+        await oauth_app.get("/authorize"),
+        await oauth_app.get("/auth/callback"),
     ):
         assert resp.headers.get("location") != "/login"
         assert resp.status_code != 303

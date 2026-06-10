@@ -92,6 +92,42 @@ class Settings(BaseSettings):
         """Return the set of allowed GitHub logins (lowercased; empty = any)."""
         return {u.strip().lower() for u in self.github_allowed_users.split(",") if u.strip()}
 
+    def validate_security(self) -> None:
+        """Fail fast on insecure/blank secrets for the active auth mode.
+
+        Catches misconfigurations that would otherwise *fail open* — signing
+        session cookies with a public default, leaving ``/mcp`` unauthenticated,
+        or admitting any GitHub account — by refusing to start instead.
+
+        Raises:
+            ValueError: If any required secret is missing for the configured
+                mode. All problems are aggregated into one message.
+        """
+        _gen = '`python -c "import secrets; print(secrets.token_urlsafe(48))"`'
+        problems: list[str] = []
+        if not self.session_secret:
+            problems.append(
+                "SESSION_SECRET is not set: session cookies would be signed with a "
+                f"public default, allowing forged logins. Generate one with {_gen}."
+            )
+        if self.mcp_oauth_enabled:
+            if not self.github_allowed_logins():
+                problems.append(
+                    "GITHUB_ALLOWED_USERS is empty while GitHub OAuth is enabled: any "
+                    "GitHub account that authorizes the app could read your health "
+                    "data. Set it to your comma-separated GitHub login(s)."
+                )
+        elif not self.mcp_auth_token:
+            problems.append(
+                "MCP_AUTH_TOKEN is not set and GitHub OAuth is not configured: the "
+                f"/mcp endpoint would be unauthenticated. Set MCP_AUTH_TOKEN ({_gen}) "
+                "or configure GitHub OAuth."
+            )
+        if problems:
+            raise ValueError(
+                "Insecure configuration; refusing to start:\n- " + "\n- ".join(problems)
+            )
+
 
 @lru_cache
 def get_settings() -> Settings:

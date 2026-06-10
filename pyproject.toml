@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "personal-health-mcp"
-version = "1.0.0"
+version = "2.0.0"
 description = "Self-hosted MCP server aggregating personal health data from Google Health, Oura, and Withings behind one normalized, provider-attributed interface."
 readme = "README.md"
 requires-python = ">=3.12"

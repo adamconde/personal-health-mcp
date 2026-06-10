@@ -35,6 +35,7 @@ machine) and a small web UI for managing provider connections and preferences.
     - [Option B — Caddy reverse proxy (Let's Encrypt)](#option-b--caddy-reverse-proxy-lets-encrypt)
     - [Option C — LAN / development](#option-c--lan--development)
   - [Connecting MCP clients](#connecting-mcp-clients)
+    - [Authenticating with GitHub OAuth (optional)](#authenticating-with-github-oauth-optional)
     - [Tools](#tools)
     - [Web UI pages](#web-ui-pages)
   - [Operations](#operations)
@@ -465,6 +466,11 @@ tests/             # unit + integration
 
 ## Version history
 
+- **2.0.0** — Fail-fast security validation at startup (**breaking**: the server
+  now refuses to boot on insecure defaults). `SESSION_SECRET` is required (the
+  insecure built-in fallback was removed); `MCP_AUTH_TOKEN` is required unless
+  GitHub OAuth is configured; and `GITHUB_ALLOWED_USERS` is required when GitHub
+  OAuth is enabled (an empty allowlist no longer silently admits any GitHub user).
 - **1.0.0** — First stable release.
   - Google Health, Oura, and Withings providers behind a canonical, unit-normalized,
     provider-attributed model with authority/fallback/auto resolution.
