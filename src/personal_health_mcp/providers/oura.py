@@ -146,11 +146,16 @@ class OuraProvider(HealthProvider):
         points: list[DataPoint] = []
         for doc in docs:
             value = doc.get(field)
-            day = doc.get("day")
-            timestamp = doc.get("timestamp")
-            if value is None or (day is None and timestamp is None):
+            if value is None:
                 continue
-            ts = _day_start(day) if day else _parse_ts(timestamp)
+            day = doc.get("day")
+            if day:
+                ts = _day_start(day)
+            else:
+                timestamp = doc.get("timestamp")
+                if timestamp is None:
+                    continue  # neither a day nor a timestamp -> skip this record
+                ts = _parse_ts(timestamp)
             points.append(
                 DataPoint(
                     metric=metric,
