@@ -8,6 +8,7 @@ from personal_health_mcp.models import DataPoint
 from personal_health_mcp.providers.base import (
     HealthProvider,
     OAuthConfig,
+    ProviderAuthError,
     ProviderCapability,
 )
 
@@ -63,3 +64,24 @@ class FailingProvider(FakeProvider):
 
     async def fetch_metric(self, *args, **kwargs):  # type: ignore[override]
         raise RuntimeError("simulated provider failure")
+
+
+class AuthExpiringProvider(FakeProvider):
+    """Raises ``ProviderAuthError`` on the first fetch, then returns its data.
+
+    Models an expired/revoked token so the read path's refresh-and-retry can be
+    exercised. ``calls`` records every attempt (so a retry shows up as 2 calls).
+    """
+
+    async def fetch_metric(
+        self,
+        metric: str,
+        start: datetime,
+        end: datetime,
+        access_token: str,
+        native_unit: str | None = None,
+    ) -> list[DataPoint]:
+        self.calls.append((metric, start, end))
+        if len(self.calls) == 1:
+            raise ProviderAuthError("simulated expired token")
+        return list(self._data.get(metric, []))

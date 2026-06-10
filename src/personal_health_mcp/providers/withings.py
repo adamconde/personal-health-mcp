@@ -19,8 +19,10 @@ from .base import (
     DEFAULT_TIMEOUT,
     HealthProvider,
     OAuthConfig,
+    ProviderAuthError,
     ProviderCapability,
     ProviderError,
+    raise_for_auth,
     register,
 )
 
@@ -118,9 +120,14 @@ class WithingsProvider(HealthProvider):
         headers = {"Authorization": f"Bearer {access_token}"}
         async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
             resp = await client.post(f"{API_BASE}{path}", data=data, headers=headers)
+            raise_for_auth(resp.status_code, "Withings")
             resp.raise_for_status()
             payload = resp.json()
         status = payload.get("status")
+        # Withings signals an invalid/expired token via the envelope status, not
+        # the HTTP code; classify it so the read path can refresh and retry.
+        if status in (401, 601):
+            raise ProviderAuthError(f"Withings authentication failed (status={status}).")
         if status != 0:
             raise ProviderError(f"Withings API error (status={status}).")
         return payload.get("body", {})
@@ -144,11 +151,17 @@ class WithingsProvider(HealthProvider):
                 data["offset"] = str(offset)
             body = await self._post("/measure", data, access_token)
             for grp in body.get("measuregrps", []):
-                ts = datetime.fromtimestamp(grp["date"], tz=UTC)
+                grp_date = grp.get("date")
+                if grp_date is None:
+                    continue  # skip a malformed group rather than dropping the series
+                ts = datetime.fromtimestamp(grp_date, tz=UTC)
                 for meas in grp.get("measures", []):
                     if meas.get("type") != code:
                         continue
-                    value = float(meas["value"]) * (10 ** int(meas["unit"]))
+                    raw, exp = meas.get("value"), meas.get("unit")
+                    if raw is None or exp is None:
+                        continue
+                    value = float(raw) * (10 ** int(exp))
                     points.append(
                         DataPoint(
                             metric=metric,
@@ -159,10 +172,12 @@ class WithingsProvider(HealthProvider):
                             device=grp.get("model"),
                         )
                     )
-            if body.get("more"):
-                offset = int(body.get("offset", 0))
-            else:
+            if not body.get("more"):
                 break
+            next_offset = int(body.get("offset", 0))
+            if next_offset <= offset:
+                break  # no forward progress; stop rather than loop forever
+            offset = next_offset
         return points
 
     # ── getactivity ──────────────────────────────────────────────────────
@@ -180,14 +195,15 @@ class WithingsProvider(HealthProvider):
         points: list[DataPoint] = []
         for act in body.get("activities", []):
             value = act.get(field)
-            if value is None:
+            day = act.get("date")
+            if value is None or day is None:
                 continue
             points.append(
                 DataPoint(
                     metric=metric,
                     value=float(value),
                     unit=unit,
-                    start=_day_start(act["date"]),
+                    start=_day_start(day),
                     provider=self.name,
                     device=act.get("model"),
                 )
@@ -211,12 +227,11 @@ class WithingsProvider(HealthProvider):
         for night in series:
             payload = night.get("data", night)
             value = payload.get(field)
-            if value is None:
-                continue
             day = night.get("date")
-            ts = _day_start(day) if day else datetime.fromtimestamp(
-                night["startdate"], tz=UTC
-            )
+            startdate = night.get("startdate")
+            if value is None or (day is None and startdate is None):
+                continue
+            ts = _day_start(day) if day else datetime.fromtimestamp(startdate, tz=UTC)
             points.append(
                 DataPoint(
                     metric=metric,

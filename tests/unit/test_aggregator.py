@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from tests.fakes import FailingProvider, FakeProvider
+from tests.fakes import AuthExpiringProvider, FailingProvider, FakeProvider
 
 from personal_health_mcp.aggregator import Aggregator
 from personal_health_mcp.models import DataPoint, MetricPref, ResolutionMode
@@ -85,6 +85,33 @@ async def test_failing_provider_is_isolated_and_recorded(store: Store):
     env = await agg.get_metric("weight", START, END)  # auto by default
     # withings failed -> only oura contributes
     assert env.providers == ["oura"]
+    status = await store.get_status("withings")
+    assert status is not None and status.last_error is not None
+
+
+async def test_auth_error_triggers_refresh_and_retry(store: Store):
+    provider = AuthExpiringProvider("withings", {"weight": [weight_dp("withings", 80.0)]})
+    refreshed: list[str] = []
+
+    async def force_refresh(name: str) -> str | None:
+        refreshed.append(name)
+        return "fresh-token"
+
+    agg = Aggregator(
+        store, {"withings": provider}, make_token_getter({"withings"}), force_refresh=force_refresh
+    )
+    env = await agg.get_metric("weight", START, END)  # auto by default
+    assert refreshed == ["withings"]  # refresh attempted once
+    assert len(provider.calls) == 2  # initial 401 + retry
+    assert env.providers == ["withings"] and env.points[0].value == 80.0
+
+
+async def test_auth_error_without_refresh_is_isolated(store: Store):
+    # No force_refresh wired -> the 401 is reported, not retried, and yields no data.
+    provider = AuthExpiringProvider("withings", {"weight": [weight_dp("withings", 80.0)]})
+    agg = Aggregator(store, {"withings": provider}, make_token_getter({"withings"}))
+    env = await agg.get_metric("weight", START, END)
+    assert env.providers == []
     status = await store.get_status("withings")
     assert status is not None and status.last_error is not None
 

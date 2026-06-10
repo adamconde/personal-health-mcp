@@ -69,6 +69,24 @@ class ProviderError(RuntimeError):
     """Raised when a provider cannot fulfil a request (auth/HTTP/mapping)."""
 
 
+class ProviderAuthError(ProviderError):
+    """Raised when a provider rejects the access token (re-auth/refresh needed).
+
+    Distinguished from :class:`ProviderError` so the read path can react to an
+    expired/revoked token (refresh and retry) rather than masking it as 'no data'.
+    """
+
+
+def raise_for_auth(status_code: int, provider_label: str) -> None:
+    """Raise :class:`ProviderAuthError` if ``status_code`` is 401/403.
+
+    Shared by providers so token-rejection is classified consistently across
+    vendors instead of being hand-rolled (and missed) per call site.
+    """
+    if status_code in (401, 403):
+        raise ProviderAuthError(f"{provider_label} authentication failed ({status_code}).")
+
+
 # Populated by the @register decorator.
 PROVIDER_REGISTRY: dict[str, type[HealthProvider]] = {}
 

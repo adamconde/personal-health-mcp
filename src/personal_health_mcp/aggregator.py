@@ -11,13 +11,14 @@ fake token source and fake providers.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 
 from .display import resolve_display_unit
 from .metrics import get_metric
 from .models import DataPoint, ResolutionMode, ResolvedPoint, ResponseEnvelope
-from .providers.base import HealthProvider
+from .providers.base import HealthProvider, ProviderAuthError
 from .resolution import resolve
 from .storage import Store
 from .timeutil import now_utc
@@ -35,6 +36,9 @@ class Aggregator:
         providers: Mapping of provider name -> provider instance.
         token_getter: Async callable returning a valid access token for a
             provider, or ``None`` if the provider isn't connected.
+        force_refresh: Optional async callable that force-refreshes a provider's
+            token (used to recover from a mid-fetch 401). If ``None``, an auth
+            failure is reported without a retry.
     """
 
     def __init__(
@@ -42,10 +46,12 @@ class Aggregator:
         store: Store,
         providers: dict[str, HealthProvider],
         token_getter: TokenGetter,
+        force_refresh: TokenGetter | None = None,
     ) -> None:
         self._store = store
         self._providers = providers
         self._token_getter = token_getter
+        self._force_refresh = force_refresh
 
     # ── discovery ────────────────────────────────────────────────────────
     async def connected_providers(self) -> list[str]:
@@ -70,13 +76,24 @@ class Aggregator:
         start: datetime,
         end: datetime,
     ) -> list[DataPoint]:
-        """Fetch a metric from a single provider, returning [] on any failure."""
+        """Fetch a metric from a single provider, returning [] on any failure.
+
+        On a token rejection (:class:`ProviderAuthError`) the token is refreshed
+        once and the fetch retried, so an expired/revoked token recovers instead
+        of being masked as 'no data'.
+        """
         token = await self._token_getter(name)
         if not token:
             return []
         provider = self._providers[name]
         try:
-            points = await provider.fetch_metric(metric, start, end, token)
+            try:
+                points = await provider.fetch_metric(metric, start, end, token)
+            except ProviderAuthError:
+                token = await self._force_refresh(name) if self._force_refresh else None
+                if not token:
+                    raise
+                points = await provider.fetch_metric(metric, start, end, token)
         except Exception as exc:  # noqa: BLE001 - isolate provider failures
             await self._store.set_status(name, last_error=f"{metric}: {exc}")
             return []
@@ -90,11 +107,11 @@ class Aggregator:
         start: datetime,
         end: datetime,
     ) -> dict[str, list[DataPoint]]:
-        """Fetch ``metric`` from each provider in ``names``."""
-        result: dict[str, list[DataPoint]] = {}
-        for name in names:
-            result[name] = await self._fetch_one(name, metric, start, end)
-        return result
+        """Fetch ``metric`` from each provider in ``names`` concurrently."""
+        results = await asyncio.gather(
+            *(self._fetch_one(name, metric, start, end) for name in names)
+        )
+        return dict(zip(names, results, strict=True))
 
     def _to_display(self, points: list[DataPoint], display_unit: str) -> list[ResolvedPoint]:
         """Convert canonical points to display-unit resolved points."""
@@ -145,8 +162,9 @@ class Aggregator:
         candidates = self.providers_supporting(metric_key)
         points_by_provider = await self._gather(candidates, metric_key, start, end)
         pref = await self._store.get_metric_pref(metric_key)
-        priority = await self.connected_providers()
-        result = resolve(metric, points_by_provider, pref, priority=priority)
+        # Auto-mode tie-break order is derived from the providers that returned
+        # data (resolve ranks them in sorted-name order); no second token pass.
+        result = resolve(metric, points_by_provider, pref)
         resolved = self._to_display(result.points, display_unit)
 
         return ResponseEnvelope(

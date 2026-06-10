@@ -21,7 +21,7 @@ from .base import (
     HealthProvider,
     OAuthConfig,
     ProviderCapability,
-    ProviderError,
+    raise_for_auth,
     register,
 )
 
@@ -171,8 +171,7 @@ class GoogleHealthProvider(HealthProvider):
                     params=params,
                     headers={"Authorization": f"Bearer {access_token}"},
                 )
-                if resp.status_code == 401:
-                    raise ProviderError("Google Health authentication failed (401).")
+                raise_for_auth(resp.status_code, "Google Health")
                 resp.raise_for_status()
                 body = resp.json()
                 for point in body.get("dataPoints", []):

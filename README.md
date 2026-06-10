@@ -466,6 +466,14 @@ tests/             # unit + integration
 
 ## Version history
 
+- **2.1.0** — Read-path correctness & resilience.
+  - Recover from a mid-fetch token rejection: providers classify 401/403 as an
+    auth error and the aggregator refreshes the token once and retries (instead
+    of masking it as "no data").
+  - Malformed provider records are skipped individually rather than dropping the
+    whole series; Withings `getmeas` pagination can no longer loop forever.
+  - Auto-mode resolution tie-breaks are now fully deterministic.
+  - Provider fetches run concurrently; date-range inputs are validated and capped.
 - **2.0.0** — Fail-fast security validation at startup (**breaking**: the server
   now refuses to boot on insecure defaults). `SESSION_SECRET` is required (the
   insecure built-in fallback was removed); `MCP_AUTH_TOKEN` is required unless

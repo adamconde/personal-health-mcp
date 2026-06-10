@@ -18,7 +18,7 @@ from .base import (
     HealthProvider,
     OAuthConfig,
     ProviderCapability,
-    ProviderError,
+    raise_for_auth,
     register,
 )
 
@@ -125,8 +125,7 @@ class OuraProvider(HealthProvider):
                 if token:
                     q["next_token"] = token
                 resp = await client.get(f"{API_BASE}{path}", params=q, headers=headers)
-                if resp.status_code == 401:
-                    raise ProviderError("Oura authentication failed (401).")
+                raise_for_auth(resp.status_code, "Oura")
                 resp.raise_for_status()
                 body = resp.json()
                 out.extend(body.get("data", []))
@@ -147,10 +146,11 @@ class OuraProvider(HealthProvider):
         points: list[DataPoint] = []
         for doc in docs:
             value = doc.get(field)
-            if value is None:
-                continue
             day = doc.get("day")
-            ts = _day_start(day) if day else _parse_ts(doc["timestamp"])
+            timestamp = doc.get("timestamp")
+            if value is None or (day is None and timestamp is None):
+                continue
+            ts = _day_start(day) if day else _parse_ts(timestamp)
             points.append(
                 DataPoint(
                     metric=metric,
@@ -193,8 +193,7 @@ class OuraProvider(HealthProvider):
             resp = await client.get(
                 f"{API_BASE}/v2/usercollection/personal_info", headers=headers
             )
-            if resp.status_code == 401:
-                raise ProviderError("Oura authentication failed (401).")
+            raise_for_auth(resp.status_code, "Oura")
             resp.raise_for_status()
             doc = resp.json()
         field, unit = ("weight", "kg") if metric == "weight" else ("height", "m")

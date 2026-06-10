@@ -104,3 +104,14 @@ def test_auto_daily_same_day_tiebreak_by_priority():
     )
     assert len(res.points) == 1
     assert res.points[0].provider == "withings"
+
+
+def test_auto_daily_tiebreak_deterministic_without_priority():
+    # No priority supplied: a same-day tie must resolve to the same provider
+    # regardless of dict insertion order (sorted-name rank, not iteration order).
+    a = dp("withings", 200, 1)
+    b = dp("oura", 100, 1)
+    pref = MetricPref(metric="steps", mode=ResolutionMode.AUTO)
+    res1 = resolve(STEPS, {"withings": [a], "oura": [b]}, pref)
+    res2 = resolve(STEPS, {"oura": [b], "withings": [a]}, pref)
+    assert res1.points[0].provider == res2.points[0].provider == "oura"

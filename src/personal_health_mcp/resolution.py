@@ -116,7 +116,14 @@ def _resolve_auto(
     priority: list[str] | None,
 ) -> ResolutionResult:
     """Most-recent-per-bucket resolution across all providers."""
-    order = priority or sorted(non_empty)
+    # Rank every contributing provider deterministically: the supplied priority
+    # first, then any remaining providers in sorted-name order. Without this, a
+    # provider absent from `priority` would share the same fallback rank, and a
+    # same-timestamp (daily-metric) tie would be decided by dict iteration order.
+    order = list(priority or [])
+    for name in sorted(non_empty):
+        if name not in order:
+            order.append(name)
     rank = {name: i for i, name in enumerate(order)}
 
     def sort_key(p: DataPoint) -> tuple:

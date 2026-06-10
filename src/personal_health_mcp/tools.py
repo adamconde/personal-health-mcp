@@ -8,7 +8,7 @@ data provider is always named in the response. Tools are thin wrappers over the
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, time
+from datetime import UTC, date, datetime, time
 
 from fastmcp import FastMCP
 
@@ -16,11 +16,38 @@ from .app import AppContext
 from .metrics import all_metrics, get_metric
 from .models import MetricPref, ResolutionMode
 
+# Hard ceiling on a single query window, guarding against pathological ranges
+# (e.g. year 0001 to 9999) that would fan out to every provider.
+_MAX_RANGE_DAYS = 1500
+
+
+def _parse_day(value: str) -> date:
+    """Parse a strict ``YYYY-MM-DD`` string into a date.
+
+    Raises:
+        ValueError: If ``value`` is not a valid ``YYYY-MM-DD`` date. (Unlike
+            ``datetime.fromisoformat``, this rejects datetimes with a time part.)
+    """
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise ValueError(f"Invalid date {value!r}; expected YYYY-MM-DD.") from exc
+
 
 def _day_bounds(start: str, end: str | None = None) -> tuple[datetime, datetime]:
-    """Expand ``YYYY-MM-DD`` strings into an inclusive UTC datetime window."""
-    s = datetime.fromisoformat(start).date()
-    e = datetime.fromisoformat(end).date() if end else s
+    """Expand ``YYYY-MM-DD`` strings into an inclusive UTC datetime window.
+
+    Raises:
+        ValueError: If a date is malformed, ``end`` precedes ``start``, or the
+            window exceeds ``_MAX_RANGE_DAYS`` days.
+    """
+    s = _parse_day(start)
+    e = _parse_day(end) if end else s
+    if e < s:
+        raise ValueError(f"end {end!r} precedes start {start!r}.")
+    span = (e - s).days
+    if span > _MAX_RANGE_DAYS:
+        raise ValueError(f"Date range too large ({span} days); max {_MAX_RANGE_DAYS}.")
     start_dt = datetime.combine(s, time.min, tzinfo=UTC)
     end_dt = datetime.combine(e, time.max, tzinfo=UTC)
     return start_dt, end_dt

@@ -145,6 +145,22 @@ class TokenManager:
                 return token.access_token
             return await self._refresh(provider_name, token)
 
+    async def force_refresh(self, provider_name: str) -> str | None:
+        """Refresh ``provider_name``'s token regardless of expiry; return the new
+        access token or None.
+
+        Used reactively after a provider rejects the current token (HTTP 401):
+        a token may be revoked or expired before its recorded ``expires_at`` (or
+        carry no expiry at all), so proactive ``_needs_refresh`` can't catch it.
+        """
+        if provider_name not in self._providers:
+            return None
+        async with self._locks[provider_name]:
+            token = await self._store.get_token(provider_name)
+            if token is None:
+                return None
+            return await self._refresh(provider_name, token)
+
     def _needs_refresh(self, token) -> bool:
         if token.expires_at is None:
             return False

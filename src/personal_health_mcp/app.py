@@ -76,7 +76,12 @@ def create_context(
     store = Store(settings, crypto, database_url=database_url)
     providers = build_providers()
     token_manager = TokenManager(store, providers)
-    aggregator = Aggregator(store, providers, token_manager.get_access_token)
+    aggregator = Aggregator(
+        store,
+        providers,
+        token_manager.get_access_token,
+        force_refresh=token_manager.force_refresh,
+    )
     auth_flow = AuthFlow(settings, store, providers)
     hasher = PasswordHasher()
     password_hash = hasher.hash(settings.web_password) if settings.web_password else None
