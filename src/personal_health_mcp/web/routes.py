@@ -17,7 +17,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
 from ..app import AppContext
-from ..metrics import PREF_GROUPS, all_metrics, get_metric
+from ..metrics import PREF_GROUPS, all_metrics
 from ..models import MetricPref, ResolutionMode
 from .security import check_csrf, ensure_csrf
 
@@ -191,20 +191,23 @@ def create_web_routes(ctx: AppContext) -> list[BaseRoute]:
             )
         return render(request, "metrics.html", {"rows": rows, "saved": request.query_params.get("saved")})
 
-    async def save_metric(request: Request) -> Response:
-        """Persist a single metric's resolution preference."""
-        metric = request.path_params["metric"]
-        get_metric(metric)
+    async def save_metrics(request: Request) -> Response:
+        """Persist resolution preferences for every metric on the page."""
         form = await request.form()
         if not check_csrf(request, _form_value(form, "csrf")):
             return Response("Invalid CSRF token", status_code=400)
-        mode = ResolutionMode(str(form.get("mode", "auto")))
-        authority = str(form.get("authority", "")).strip() or None
-        fallback_raw = str(form.get("fallback_order", "")).strip()
-        fallback = [p.strip() for p in fallback_raw.split(",") if p.strip()]
-        await ctx.store.set_metric_pref(
-            MetricPref(metric=metric, mode=mode, authority=authority, fallback_order=fallback)
-        )
+        for m in all_metrics():
+            key = m.key
+            supporting = [n for n, p in ctx.providers.items() if p.supports(key)]
+            if not supporting:
+                continue
+            mode = ResolutionMode(str(form.get(f"mode[{key}]", "auto")))
+            authority = str(form.get(f"authority[{key}]", "")).strip() or None
+            fallback_raw = str(form.get(f"fallback_order[{key}]", "")).strip()
+            fallback = [p.strip() for p in fallback_raw.split(",") if p.strip()]
+            await ctx.store.set_metric_pref(
+                MetricPref(metric=key, mode=mode, authority=authority, fallback_order=fallback)
+            )
         return RedirectResponse("/metrics?saved=1", status_code=303)
 
     # ── unit preferences ─────────────────────────────────────────────────
@@ -241,7 +244,7 @@ def create_web_routes(ctx: AppContext) -> list[BaseRoute]:
         Route("/oauth/{provider}/start", oauth_start, methods=["POST"]),
         Route("/oauth/{provider}/callback", oauth_callback, methods=["GET"]),
         Route("/metrics", metrics_page, methods=["GET"]),
-        Route("/metrics/{metric}", save_metric, methods=["POST"]),
+        Route("/metrics", save_metrics, methods=["POST"]),
         Route("/units", units_page, methods=["GET"]),
         Route("/units", save_units, methods=["POST"]),
     ]

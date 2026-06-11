@@ -44,7 +44,7 @@ async def test_get_metric_includes_provider_and_converts_units(store: Store):
     )
     agg = Aggregator(store, providers, make_token_getter({"withings", "oura"}))
 
-    env = await agg.get_metric("weight", START, END)
+    env = await agg.get_metric("weight", START, END, unit="kg")
     assert env.providers == ["withings"]
     assert env.resolution == "authority:withings"
     assert env.unit == "kg"
@@ -100,7 +100,7 @@ async def test_auth_error_triggers_refresh_and_retry(store: Store):
     agg = Aggregator(
         store, {"withings": provider}, make_token_getter({"withings"}), force_refresh=force_refresh
     )
-    env = await agg.get_metric("weight", START, END)  # auto by default
+    env = await agg.get_metric("weight", START, END, unit="kg")  # auto by default
     assert refreshed == ["withings"]  # refresh attempted once
     assert len(provider.calls) == 2  # initial 401 + retry
     assert env.providers == ["withings"] and env.points[0].value == 80.0
@@ -125,7 +125,7 @@ async def test_explicit_provider_bypasses_resolution(store: Store):
         MetricPref(metric="weight", mode=ResolutionMode.AUTHORITY, authority="withings")
     )
     agg = Aggregator(store, providers, make_token_getter({"withings", "oura"}))
-    env = await agg.get_metric("weight", START, END, provider="oura")
+    env = await agg.get_metric("weight", START, END, unit="kg", provider="oura")
     assert env.resolution == "explicit:oura"
     assert env.points[0].value == 81.0
 
@@ -136,7 +136,7 @@ async def test_compare_metric_returns_all_providers_unresolved(store: Store):
         "oura": FakeProvider("oura", {"weight": [weight_dp("oura", 81.0)]}),
     }
     agg = Aggregator(store, providers, make_token_getter({"withings", "oura"}))
-    out = await agg.compare_metric("weight", START, END)
+    out = await agg.compare_metric("weight", START, END, unit="kg")
     assert set(out["providers"]) == {"withings", "oura"}
     assert out["providers"]["withings"][0]["value"] == 80.0
     assert out["providers"]["oura"][0]["value"] == 81.0

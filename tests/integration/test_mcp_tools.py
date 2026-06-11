@@ -93,7 +93,9 @@ async def test_get_metric_names_provider_and_resolves(ctx: AppContext):
     mcp = build_mcp(ctx)
     async with Client(mcp) as client:
         env = await _call(
-            client, "health_get_metric", {"metric": "weight", "start": "2030-01-01"}
+            client,
+            "health_get_metric",
+            {"metric": "weight", "start": "2030-01-01", "unit": "kg"},
         )
     assert env["providers"] == ["withings"]
     assert env["resolution"] == "authority:withings"
@@ -132,7 +134,9 @@ async def test_set_authority_then_applied(ctx: AppContext):
             {"metric": "weight", "mode": "authority", "authority": "oura"},
         )
         env = await _call(
-            client, "health_get_metric", {"metric": "weight", "start": "2030-01-01"}
+            client,
+            "health_get_metric",
+            {"metric": "weight", "start": "2030-01-01", "unit": "kg"},
         )
     assert env["resolution"] == "authority:oura"
     assert env["points"][0]["value"] == 81.0

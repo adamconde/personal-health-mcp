@@ -81,6 +81,8 @@ class ResolvedPoint(BaseModel):
     Attributes:
         value: Magnitude in the requested display unit.
         unit: Display unit name.
+        formatted: Human-friendly rendering for compound units (e.g. ``5' 9"``
+            for ``ft/in``); ``None`` when the numeric value suffices.
         start: Sample/interval/day start.
         end: Interval end, when applicable.
         provider: Provider that supplied this value.
@@ -89,6 +91,7 @@ class ResolvedPoint(BaseModel):
 
     value: float
     unit: str
+    formatted: str | None = None
     start: datetime
     end: datetime | None = None
     provider: str

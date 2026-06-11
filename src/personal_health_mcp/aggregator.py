@@ -22,7 +22,7 @@ from .providers.base import HealthProvider, ProviderAuthError
 from .resolution import resolve
 from .storage import Store
 from .timeutil import now_utc
-from .units import convert
+from .units import convert, format_quantity
 
 # async (provider_name) -> access_token or None if not connected / unavailable.
 TokenGetter = Callable[[str], Awaitable[str | None]]
@@ -117,10 +117,12 @@ class Aggregator:
         """Convert canonical points to display-unit resolved points."""
         out = []
         for p in points:
+            value = convert(p.value, p.unit, display_unit)
             out.append(
                 ResolvedPoint(
-                    value=convert(p.value, p.unit, display_unit),
+                    value=value,
                     unit=display_unit,
+                    formatted=format_quantity(value, display_unit),
                     start=p.start,
                     end=p.end,
                     provider=p.provider,

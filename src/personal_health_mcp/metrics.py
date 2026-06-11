@@ -76,12 +76,12 @@ def _m(
 # concrete unit appropriate to each metric's dimension (e.g. temperature "F" maps
 # to "Fd" for a temperature *deviation* metric).
 PREF_GROUPS: dict[str, dict[str, object]] = {
-    "mass": {"choices": ["kg", "lb", "st"], "default": "kg"},
-    "distance": {"choices": ["km", "mi"], "default": "km"},
-    "height": {"choices": ["cm", "m", "in", "ft"], "default": "cm"},
+    "mass": {"choices": ["kg", "lb", "st"], "default": "lb"},
+    "distance": {"choices": ["km", "mi"], "default": "mi"},
+    "height": {"choices": ["cm", "ft/in"], "default": "ft/in"},
     "temperature": {
         "choices": ["C", "F"],
-        "default": "C",
+        "default": "F",
         # temperature deltas use the delta-dimension units
         "delta": {"C": "Cd", "F": "Fd"},
     },

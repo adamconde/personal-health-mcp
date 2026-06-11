@@ -152,12 +152,12 @@ async def test_set_metric_pref_persists(web):
     client, ctx = web
     csrf = await _login(client)
     resp = await client.post(
-        "/metrics/weight",
+        "/metrics",
         data={
             "csrf": csrf,
-            "mode": "authority",
-            "authority": "withings",
-            "fallback_order": "google, oura",
+            "mode[weight]": "authority",
+            "authority[weight]": "withings",
+            "fallback_order[weight]": "google, oura",
         },
     )
     assert resp.status_code == 303

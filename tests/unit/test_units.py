@@ -11,6 +11,7 @@ from personal_health_mcp.units import (
     UnknownUnitError,
     convert,
     dimension_of,
+    format_quantity,
     same_dimension,
     units_for_dimension,
 )
@@ -79,6 +80,29 @@ def test_incompatible_dimensions_raise():
 def test_unknown_unit_raises():
     with pytest.raises(UnknownUnitError):
         convert(1.0, "kg", "furlong")
+
+
+def test_height_to_ft_in_value_is_decimal_feet():
+    # 1.75 m == 5.7415 ft (the numeric value carries decimal feet).
+    assert math.isclose(convert(1.75, "m", "ft/in"), 1.75 / 0.3048, rel_tol=1e-9)
+
+
+@pytest.mark.parametrize(
+    ("meters", "expected"),
+    [
+        (1.75, "5' 9\""),
+        (1.80, "5' 11\""),
+        (1.524, "5' 0\""),  # exactly 5 ft
+        (1.8186, "6' 0\""),  # ~71.6 in rounds to 12 -> carry into feet, not "5' 12\""
+    ],
+)
+def test_format_quantity_ft_in(meters, expected):
+    assert format_quantity(convert(meters, "m", "ft/in"), "ft/in") == expected
+
+
+def test_format_quantity_returns_none_for_plain_units():
+    assert format_quantity(72.5, "kg") is None
+    assert format_quantity(180.0, "cm") is None
 
 
 def test_dimension_helpers():

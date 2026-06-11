@@ -129,10 +129,10 @@ async def test_metric_pref_defaults_and_upsert(store: Store):
 
 async def test_unit_prefs_defaults_and_upsert(store: Store):
     prefs = await store.get_unit_prefs()
-    assert prefs["mass"] == "kg"
-    assert prefs["temperature"] == "C"
-    await store.set_unit_pref("mass", "lb")
-    assert (await store.get_unit_prefs())["mass"] == "lb"
+    assert prefs["mass"] == "lb"
+    assert prefs["temperature"] == "F"
+    await store.set_unit_pref("mass", "kg")
+    assert (await store.get_unit_prefs())["mass"] == "kg"
 
 
 async def test_status_upsert(store: Store):

@@ -54,6 +54,9 @@ _UNITS: dict[str, UnitDef] = {
     "yd": UnitDef("length", 0.9144),
     "ft": UnitDef("length", 0.3048),
     "in": UnitDef("length", 0.0254),
+    # compound feet+inches: numeric value carries decimal feet (same transform
+    # as "ft"); a single float can't express 5'9", so format_quantity renders it.
+    "ft/in": UnitDef("length", 0.3048),
     # absolute temperature (pivot degC)
     "C": UnitDef("temperature", 1.0, 0.0),
     "F": UnitDef("temperature", 5.0 / 9.0, -160.0 / 9.0),
@@ -144,3 +147,25 @@ def convert(value: float, from_unit: str, to_unit: str) -> float:
         )
     canonical = value * src.factor + src.offset
     return (canonical - dst.offset) / dst.factor
+
+
+def format_quantity(value: float, unit: str) -> str | None:
+    """Return a compound human rendering for units a single number can't express.
+
+    Currently only ``ft/in``: the numeric value (decimal feet) is rendered as
+    whole feet and inches, e.g. ``5' 9"``. Inches are rounded to the nearest
+    whole inch, carrying into feet when they reach 12.
+
+    Args:
+        value: Magnitude in ``unit``.
+        unit: The display unit name.
+
+    Returns:
+        A formatted string for compound units, or ``None`` when the plain
+        numeric value already describes the quantity adequately.
+    """
+    if unit == "ft/in":
+        total_inches = round(value * 12)
+        feet, inches = divmod(total_inches, 12)
+        return f"{feet}' {inches}\""
+    return None
