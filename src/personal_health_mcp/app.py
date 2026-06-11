@@ -36,6 +36,11 @@ class AppContext:
     _password_hasher: PasswordHasher
     _password_hash: str | None
 
+    @property
+    def has_password(self) -> bool:
+        """True if a UI password is configured (break-glass login possible)."""
+        return self._password_hash is not None
+
     def verify_password(self, password: str) -> bool:
         """Return True if ``password`` matches the configured UI password.
 

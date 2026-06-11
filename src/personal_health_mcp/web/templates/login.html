@@ -6,13 +6,29 @@
   <h1 class="headline-small" style="text-align:center;">Health MCP</h1>
   <p class="body-medium muted" style="text-align:center;">Sign in to manage your health data preferences.</p>
   {% if error %}<div class="banner banner--error" role="alert">{{ error }}</div>{% endif %}
+
+  {% if github_enabled %}
+  <form method="post" action="/login/github" class="stack">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button class="btn" type="submit" style="width:100%;">Sign in with GitHub</button>
+  </form>
+  {% endif %}
+
+  {% if github_enabled and password_available %}
+  <p class="body-medium muted" style="text-align:center; margin:0.75rem 0;">— or —</p>
+  {% endif %}
+
+  {% if password_available %}
   <form method="post" action="/login" class="stack">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <div class="field">
       <input id="password" name="password" type="password" placeholder=" " autofocus required>
       <label for="password">Password</label>
     </div>
-    <button class="btn" type="submit" style="width:100%;">Sign in</button>
+    <button class="btn{% if github_enabled %} btn--outlined{% endif %}" type="submit" style="width:100%;">Sign in</button>
   </form>
+  {% elif not github_enabled %}
+  <div class="banner" role="status">Password sign-in is not available from your network. Connect from the local network or configure GitHub sign-in.</div>
+  {% endif %}
 </div>
 {% endblock %}

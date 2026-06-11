@@ -79,3 +79,58 @@ async def test_web_ui_is_coresident_in_oauth_mode(oauth_app):
     root = await oauth_app.get("/")
     assert root.status_code == 303 and root.headers["location"] == "/login"
     assert (await oauth_app.get("/login")).status_code == 200
+
+
+# ── web GitHub sign-in ─────────────────────────────────────────────────────
+
+import re  # noqa: E402
+
+
+async def _start_github_login(client: httpx.AsyncClient) -> str:
+    """POST /login/github and return the ``state`` from the interstitial URL."""
+    page = await client.get("/login")
+    assert "Sign in with GitHub" in page.text
+    csrf = re.search(r'name="csrf" value="([^"]+)"', page.text).group(1)
+    resp = await client.post("/login/github", data={"csrf": csrf})
+    assert resp.status_code == 200
+    assert "github.com/login/oauth/authorize" in resp.text
+    # The URL is HTML-escaped in the template (& -> &amp;), so match up to the
+    # next ampersand or quote.
+    return re.search(r"state=([^&\"]+)", resp.text).group(1)
+
+
+async def test_github_web_login_success(oauth_app, monkeypatch):
+    async def fake_fetch_login(_settings, _code):
+        return "adamconde"  # on the allowlist
+
+    monkeypatch.setattr(
+        "personal_health_mcp.web.github_login.fetch_login", fake_fetch_login
+    )
+    state = await _start_github_login(oauth_app)
+    resp = await oauth_app.get(f"/auth/callback/web?code=abc&state={state}")
+    assert resp.status_code == 303 and resp.headers["location"] == "/"
+    # Session is now authenticated.
+    assert (await oauth_app.get("/")).status_code == 200
+
+
+async def test_github_web_login_rejects_unlisted_user(oauth_app, monkeypatch):
+    async def fake_fetch_login(_settings, _code):
+        return "intruder"  # NOT on the allowlist
+
+    monkeypatch.setattr(
+        "personal_health_mcp.web.github_login.fetch_login", fake_fetch_login
+    )
+    state = await _start_github_login(oauth_app)
+    resp = await oauth_app.get(f"/auth/callback/web?code=abc&state={state}")
+    assert resp.status_code == 200
+    assert "not authorized" in resp.text
+    # Still locked out.
+    assert (await oauth_app.get("/")).headers["location"] == "/login"
+
+
+async def test_github_web_login_state_mismatch_rejected(oauth_app):
+    # No prior /login/github -> no session state; a forged state is rejected.
+    resp = await oauth_app.get("/auth/callback/web?code=abc&state=forged")
+    assert resp.status_code == 200
+    assert "state mismatch" in resp.text
+    assert (await oauth_app.get("/")).headers["location"] == "/login"

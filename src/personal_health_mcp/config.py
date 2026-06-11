@@ -9,9 +9,35 @@ act only as a headless bootstrap fallback (see ``storage.resolve_credentials``).
 from __future__ import annotations
 
 from functools import lru_cache
+from ipaddress import IPv4Network, IPv6Network, ip_network
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Private + loopback ranges used as the default password-login allowlist
+# ("same VLAN / LAN"). Applied only when WEB_PASSWORD_ALLOWED_CIDRS is unset.
+_LAN_CIDRS = (
+    "127.0.0.0/8",
+    "::1/128",
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "fc00::/7",
+)
+
+
+def _parse_cidrs(raw: str) -> list[IPv4Network | IPv6Network]:
+    """Parse a comma-separated CIDR string into networks (invalid entries skipped)."""
+    nets: list[IPv4Network | IPv6Network] = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            nets.append(ip_network(part, strict=False))
+        except ValueError:
+            continue
+    return nets
 
 
 class Settings(BaseSettings):
@@ -68,6 +94,17 @@ class Settings(BaseSettings):
     github_client_secret: str = Field(default="")
     github_allowed_users: str = Field(default="")
 
+    # ── Web UI login ─────────────────────────────────────────────────────
+    # When GitHub OAuth is configured (github_client_id+secret), the web UI
+    # offers "Sign in with GitHub" using the SAME OAuth app and the
+    # github_allowed_users allowlist. WEB_PASSWORD then acts as a break-glass
+    # fallback, accepted ONLY from client IPs inside web_password_allowed_cidrs
+    # (comma-separated CIDRs; blank = the private/loopback LAN ranges).
+    # trusted_proxy_cidrs lists reverse proxies whose forwarded headers we trust
+    # when resolving the real client IP (blank = trust none; use the peer IP).
+    web_password_allowed_cidrs: str = Field(default="")
+    trusted_proxy_cidrs: str = Field(default="")
+
     @property
     def base_url(self) -> str:
         """Public base URL without a trailing slash."""
@@ -76,6 +113,33 @@ class Settings(BaseSettings):
     def redirect_uri(self, provider: str) -> str:
         """Construct the OAuth redirect URI for ``provider``."""
         return f"{self.base_url}/oauth/{provider}/callback"
+
+    @property
+    def github_web_redirect_uri(self) -> str:
+        """Redirect URI for the web-UI GitHub login flow.
+
+        A subdirectory of the MCP OAuth callback (``/auth/callback``), which
+        GitHub permits for the same OAuth app — so no extra GitHub config.
+        """
+        return f"{self.base_url}/auth/callback/web"
+
+    @property
+    def web_github_login_enabled(self) -> bool:
+        """True if the web UI should offer GitHub sign-in (creds configured)."""
+        return bool(self.github_client_id and self.github_client_secret)
+
+    def web_password_allowed_networks(self) -> list[IPv4Network | IPv6Network]:
+        """Networks from which WEB_PASSWORD login is accepted.
+
+        Falls back to the private/loopback LAN ranges when unset, so password
+        break-glass works on the local network without explicit configuration.
+        """
+        nets = _parse_cidrs(self.web_password_allowed_cidrs)
+        return nets or [ip_network(c) for c in _LAN_CIDRS]
+
+    def trusted_proxy_networks(self) -> list[IPv4Network | IPv6Network]:
+        """Reverse-proxy networks whose forwarded client-IP headers we trust."""
+        return _parse_cidrs(self.trusted_proxy_cidrs)
 
     def env_credentials(self, provider: str) -> tuple[str, str]:
         """Return ``(client_id, client_secret)`` from env for ``provider`` (may be empty)."""

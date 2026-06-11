@@ -68,3 +68,44 @@ def test_multiple_problems_aggregated():
         _settings(session_secret="", mcp_auth_token="").validate_security()
     assert "SESSION_SECRET" in str(exc.value)
     assert "MCP_AUTH_TOKEN" in str(exc.value)
+
+
+# ── web login settings ───────────────────────────────────────────────────
+
+
+def test_web_password_cidrs_default_is_lan():
+    nets = _settings().web_password_allowed_networks()
+    from ipaddress import ip_address
+
+    assert any(ip_address("192.168.1.5") in n for n in nets)
+    assert any(ip_address("10.1.2.3") in n for n in nets)
+    assert any(ip_address("127.0.0.1") in n for n in nets)
+    assert not any(ip_address("8.8.8.8") in n for n in nets)
+
+
+def test_web_password_cidrs_explicit_overrides_default():
+    from ipaddress import ip_address
+
+    nets = _settings(web_password_allowed_cidrs="203.0.113.0/24").web_password_allowed_networks()
+    assert [str(n) for n in nets] == ["203.0.113.0/24"]
+    assert any(ip_address("203.0.113.9") in n for n in nets)
+    assert not any(ip_address("192.168.1.5") in n for n in nets)  # LAN default no longer applied
+
+
+def test_trusted_proxy_networks_parse():
+    nets = _settings(trusted_proxy_cidrs="172.16.0.0/12, garbage, 10.0.0.0/8").trusted_proxy_networks()
+    assert [str(n) for n in nets] == ["172.16.0.0/12", "10.0.0.0/8"]  # invalid entry skipped
+
+
+def test_trusted_proxy_networks_empty_by_default():
+    assert _settings().trusted_proxy_networks() == []
+
+
+def test_web_github_login_enabled():
+    assert not _settings().web_github_login_enabled
+    assert _settings(github_client_id="id", github_client_secret="sec").web_github_login_enabled
+
+
+def test_github_web_redirect_uri():
+    s = _settings(public_base_url="https://health.example")
+    assert s.github_web_redirect_uri == "https://health.example/auth/callback/web"

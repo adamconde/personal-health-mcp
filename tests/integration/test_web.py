@@ -71,6 +71,43 @@ async def test_login_then_dashboard(web):
     assert "Dashboard" in resp.text
 
 
+def _client_from_ip(ctx, source_ip: str) -> httpx.AsyncClient:
+    """A client whose requests appear to originate from ``source_ip``."""
+    transport = httpx.ASGITransport(app=create_asgi_app(ctx), client=(source_ip, 1234))
+    return httpx.AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=False
+    )
+
+
+async def test_password_login_denied_from_non_lan_ip(web):
+    # Default WEB_PASSWORD_ALLOWED_CIDRS is LAN/loopback only; a public source IP
+    # (no trusted proxy configured -> peer is taken as-is) must be rejected.
+    _client, ctx = web
+    async with _client_from_ip(ctx, "8.8.8.8") as client:
+        resp = await client.post("/login", data={"csrf": "x", "password": "hunter2"})
+        assert resp.status_code == 200
+        assert "not available from your network" in resp.text
+        # Session was not authenticated.
+        assert (await client.get("/")).headers["location"] == "/login"
+
+
+async def test_login_page_hides_password_field_off_lan(web):
+    _client, ctx = web
+    async with _client_from_ip(ctx, "8.8.8.8") as client:
+        page = await client.get("/login")
+        assert 'name="password"' not in page.text
+
+
+async def test_password_login_allowed_from_lan_ip(web):
+    _client, ctx = web
+    async with _client_from_ip(ctx, "192.168.1.50") as client:
+        page = await client.get("/login")
+        csrf = re.search(r'name="csrf" value="([^"]+)"', page.text).group(1)
+        resp = await client.post("/login", data={"csrf": csrf, "password": "hunter2"})
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/"
+
+
 async def test_security_headers_present(web):
     client, _ctx = web
     resp = await client.get("/healthz")

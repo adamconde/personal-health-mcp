@@ -7,6 +7,7 @@ back). Every state-changing POST is CSRF-protected.
 
 from __future__ import annotations
 
+import secrets
 from pathlib import Path
 
 from starlette.datastructures import FormData
@@ -17,8 +18,11 @@ from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
 from ..app import AppContext
+from ..mcp_auth import login_allowed
 from ..metrics import PREF_GROUPS, all_metrics
 from ..models import MetricPref, ResolutionMode
+from . import github_login
+from .clientip import client_ip, ip_allowed
 from .security import check_csrf, ensure_csrf
 
 _WEB_DIR = Path(__file__).parent
@@ -39,22 +43,96 @@ def create_web_routes(ctx: AppContext) -> list[BaseRoute]:
         return JSONResponse({"status": "ok"})
 
     # ── auth ─────────────────────────────────────────────────────────────
+    def _password_allowed_here(request: Request) -> bool:
+        """Return True if password break-glass is permitted from this client IP.
+
+        Always False when no password is configured. When GitHub login is the
+        primary method, the password is still IP-gated to the LAN/allowlist.
+        """
+        if not ctx.has_password:
+            return False
+        ip = client_ip(request, ctx.settings.trusted_proxy_networks())
+        return ip_allowed(ip, ctx.settings.web_password_allowed_networks())
+
+    def _login_page(request: Request, error: str | None) -> Response:
+        # nav=[] -> base.html renders the nav-less centered auth layout.
+        return render(
+            request,
+            "login.html",
+            {
+                "error": error,
+                "nav": [],
+                "github_enabled": ctx.settings.web_github_login_enabled,
+                "password_available": _password_allowed_here(request),
+            },
+        )
+
     async def login(request: Request) -> Response:
-        """Show the login form (GET) or authenticate (POST)."""
+        """Show the login form (GET) or authenticate via password (POST).
+
+        Password login is break-glass: accepted only from an allowlisted client
+        IP (see ``WEB_PASSWORD_ALLOWED_CIDRS``). GitHub sign-in, when configured,
+        is handled by ``/login/github`` and has no IP restriction.
+        """
         if request.session.get("authenticated"):
             return RedirectResponse("/", status_code=303)
         error = None
         if request.method == "POST":
             form = await request.form()
-            if not check_csrf(request, _form_value(form, "csrf")):
+            if not _password_allowed_here(request):
+                error = "Password sign-in is not available from your network."
+            elif not check_csrf(request, _form_value(form, "csrf")):
                 error = "Invalid session token; please retry."
             elif ctx.verify_password(str(form.get("password", ""))):
                 request.session["authenticated"] = True
                 return RedirectResponse("/", status_code=303)
             else:
                 error = "Incorrect password."
-        # nav=[] -> base.html renders the nav-less centered auth layout.
-        return render(request, "login.html", {"error": error, "nav": []})
+        return _login_page(request, error)
+
+    async def github_login_start(request: Request) -> Response:
+        """Begin web GitHub sign-in: store state in session, hand off to GitHub.
+
+        Uses the same ``<meta refresh>`` interstitial as provider connect so the
+        cross-origin hop isn't subject to the page's CSP ``form-action``.
+        """
+        if request.session.get("authenticated"):
+            return RedirectResponse("/", status_code=303)
+        if not ctx.settings.web_github_login_enabled:
+            return RedirectResponse("/login", status_code=303)
+        form = await request.form()
+        if not check_csrf(request, _form_value(form, "csrf")):
+            return Response("Invalid CSRF token", status_code=400)
+        state = secrets.token_urlsafe(32)
+        request.session["gh_login_state"] = state
+        return _TEMPLATES.TemplateResponse(
+            request,
+            "oauth_redirect.html",
+            {
+                "authorize_url": github_login.authorize_url(ctx.settings, state),
+                "provider": "GitHub",
+            },
+        )
+
+    async def github_login_callback(request: Request) -> Response:
+        """Handle the GitHub return: verify state, exchange code, check allowlist."""
+        if request.session.get("authenticated"):
+            return RedirectResponse("/", status_code=303)
+        params = request.query_params
+        saved_state = request.session.pop("gh_login_state", None)
+        if params.get("error"):
+            return _login_page(request, f"GitHub sign-in failed: {params['error']}")
+        if not saved_state or saved_state != params.get("state"):
+            return _login_page(request, "GitHub sign-in state mismatch; please retry.")
+        try:
+            login = await github_login.fetch_login(ctx.settings, params.get("code", ""))
+        except Exception:  # noqa: BLE001 - report a generic failure to the user
+            return _login_page(request, "GitHub sign-in failed; please retry.")
+        if not login_allowed(login.lower(), ctx.settings.github_allowed_logins()):
+            return _login_page(request, f"GitHub user {login!r} is not authorized.")
+        request.session["authenticated"] = True
+        request.session["user_login"] = login
+        return RedirectResponse("/", status_code=303)
 
     async def logout(request: Request) -> Response:
         """Clear the session."""
@@ -236,6 +314,8 @@ def create_web_routes(ctx: AppContext) -> list[BaseRoute]:
         Mount("/static", app=StaticFiles(directory=str(_WEB_DIR / "static")), name="static"),
         Route("/healthz", healthz, methods=["GET"]),
         Route("/login", login, methods=["GET", "POST"]),
+        Route("/login/github", github_login_start, methods=["POST"]),
+        Route("/auth/callback/web", github_login_callback, methods=["GET"]),
         Route("/logout", logout, methods=["POST"]),
         Route("/", dashboard, methods=["GET"]),
         Route("/providers", providers_page, methods=["GET"]),

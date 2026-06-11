@@ -113,9 +113,9 @@ cp .env.example .env        # then fill it in (see Configuration)
 docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/compose.caddy.yml up -d
 ```
 
-Open `https://<your-domain>/`, log in with `WEB_PASSWORD`, go to **Providers**,
-enter each provider's client id/secret, click **Connect**, then set your
-**Metrics** and **Units** preferences.
+Open `https://<your-domain>/`, sign in (with GitHub if configured, otherwise
+`WEB_PASSWORD`), go to **Providers**, enter each provider's client id/secret,
+click **Connect**, then set your **Metrics** and **Units** preferences.
 
 > **Always pass `--env-file .env` and run from the repo root.** Compose's
 > `${VAR}` interpolation (used by the overlays for `CF_TUNNEL_TOKEN` /
@@ -140,9 +140,11 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 | ----------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------- |
 | `PUBLIC_BASE_URL`                               | ✅         | External HTTPS origin, no trailing slash (e.g. `https://health.example.com`). Used to build OAuth redirect URIs. |
 | `MCP_AUTH_TOKEN`                                | ✅         | Bearer token MCP clients must send (unless GitHub OAuth is configured below).                                    |
-| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`     | optional   | Set both to protect `/mcp` with GitHub OAuth instead of the bearer token.                                        |
-| `GITHUB_ALLOWED_USERS`                          | optional   | Comma-separated GitHub logins allowed when GitHub OAuth is on (set it — blank = any account).                    |
-| `WEB_PASSWORD`                                  | ✅         | Single-user web UI password (hashed with argon2id at boot; never stored in plaintext).                           |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`     | optional   | Set both to protect `/mcp` **and** offer "Sign in with GitHub" on the web UI, using the same OAuth app.          |
+| `GITHUB_ALLOWED_USERS`                          | optional   | Comma-separated GitHub logins allowed when GitHub OAuth is on (set it — blank = any account). Applies to web + MCP. |
+| `WEB_PASSWORD`                                  | ✅         | Web UI password (argon2id-hashed at boot). Break-glass when GitHub login is on: accepted only from `WEB_PASSWORD_ALLOWED_CIDRS`. |
+| `WEB_PASSWORD_ALLOWED_CIDRS`                    | –          | Comma-separated CIDRs from which password login is accepted. Blank = private/loopback LAN ranges ("same VLAN").  |
+| `TRUSTED_PROXY_CIDRS`                           | proxy      | CIDRs of your reverse proxy (e.g. the Docker network). Required behind Caddy/Cloudflare for the IP gate to see the real client. |
 | `SESSION_SECRET`                                | ✅         | Signs session cookies.                                                                                           |
 | `TOKEN_ENC_KEY`                                 | ✅         | Fernet key encrypting tokens & client secrets at rest. Comma-separate multiple keys (newest first) to rotate.    |
 | `DATABASE_PATH`                                 | –          | SQLite path (default `/data/health.db`).                                                                         |
@@ -329,13 +331,20 @@ If your client lacks native remote Streamable HTTP, bridge over stdio:
 
 Instead of the static bearer token, you can protect `/mcp` with **GitHub OAuth**
 — clients do a browser login, and access is restricted to GitHub logins you allow.
+The **web UI** uses the same OAuth app: when GitHub OAuth is configured the login
+page shows **"Sign in with GitHub"** (allowlisted by the same `GITHUB_ALLOWED_USERS`),
+and `WEB_PASSWORD` becomes a LAN-only break-glass fallback (see
+[Web UI login](#web-ui-login)).
 
 **1.** Create a **GitHub OAuth app** (GitHub → Settings → Developer settings →
 OAuth Apps) with **Authorization callback URL** `https://<your-domain>/auth/callback`.
+The web-UI login flow uses `…/auth/callback/web`, a subdirectory GitHub permits
+for the same app — **no second callback to register**.
 
 **2.** In `.env` set the following. When both id+secret are present, `/mcp`
-switches from bearer to GitHub OAuth automatically. **Set `GITHUB_ALLOWED_USERS`**
-— otherwise any GitHub account that authorizes the app could reach your data.
+switches from bearer to GitHub OAuth automatically and the web UI offers GitHub
+sign-in. **Set `GITHUB_ALLOWED_USERS`** — otherwise any GitHub account that
+authorizes the app could reach your data.
 
 ```ini
 GITHUB_CLIENT_ID=Ov23li...
@@ -384,6 +393,20 @@ weight, falling back to Google.”_
   metrics at once with a single button.
 - **Units** — mass, distance, height (cm or ft/in), temperature display units;
   imperial by default.
+
+### Web UI login
+
+- **GitHub sign-in** (when `GITHUB_CLIENT_ID`/`SECRET` are set) — the same OAuth
+  app and `GITHUB_ALLOWED_USERS` allowlist that guard `/mcp`. Works from anywhere.
+- **Password (break-glass)** — `WEB_PASSWORD` is accepted **only** from client IPs
+  in `WEB_PASSWORD_ALLOWED_CIDRS` (blank = private/loopback LAN ranges). The login
+  page hides the password field entirely when the request isn't from an allowed IP.
+- **Behind a proxy:** the real client IP is read from forwarded headers
+  (`X-Forwarded-For`, peeled right-to-left; `CF-Connecting-IP` for Cloudflare)
+  **only** when the direct peer is in `TRUSTED_PROXY_CIDRS` — otherwise the peer
+  address is used and forwarded headers are ignored (anti-spoofing). Set
+  `TRUSTED_PROXY_CIDRS` to your Docker/proxy network so LAN clients are recognized;
+  if unset, password login effectively fails closed behind the proxy (GitHub still works).
 
 ---
 
@@ -470,6 +493,15 @@ tests/             # unit + integration
 
 ## Version history
 
+- **2.3.0** — GitHub sign-in for the web UI + IP-gated password.
+  - The web UI can authenticate with **GitHub OAuth**, reusing the same OAuth app
+    and `GITHUB_ALLOWED_USERS` allowlist that protect `/mcp` (web callback
+    `…/auth/callback/web`, a subdirectory of the existing one — no GitHub change).
+  - `WEB_PASSWORD` becomes a **break-glass** login accepted only from
+    `WEB_PASSWORD_ALLOWED_CIDRS` (default: private/loopback LAN ranges).
+  - Real client IP is resolved securely behind proxies via `TRUSTED_PROXY_CIDRS`
+    (right-to-left `X-Forwarded-For` peeling + `CF-Connecting-IP`); forwarded
+    headers are ignored unless the direct peer is a trusted proxy.
 - **2.2.0** — Units & metric-preferences UX.
   - Display units now default to **imperial** across the board: mass `lb`,
     distance `mi`, temperature `°F`, height `ft/in`.
