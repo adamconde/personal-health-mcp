@@ -57,8 +57,10 @@ machine) and a small web UI for managing provider connections and preferences.
   has no data) or **`auto`** (the most recent value across all providers).
 - **Provenance, always.** Every response names the provider that supplied each
   value.
-- **Your units.** Choose kg vs lb, km vs mi, °C vs °F. When a provider can't
-  serve a unit natively, the server converts.
+- **Your units.** Choose kg vs lb, km vs mi, °C vs °F, and cm vs ft/in for
+  height — **imperial by default**. When a provider can't serve a unit natively,
+  the server converts; height in `ft/in` is rendered as feet and inches (e.g.
+  `5' 9"`).
 - **Broad coverage.** Steps, distance, calories, weight & body composition,
   heart rate, HRV, SpO₂, sleep stages, readiness/sleep scores, VO₂max,
   temperature, blood pressure/glucose, and more — including metrics only one
@@ -378,8 +380,10 @@ weight, falling back to Google.”_
 
 - **Dashboard** — provider status + effective preferences.
 - **Providers** — enter credentials (secret is write-only), connect/disconnect.
-- **Metrics** — per-metric authority/auto + fallback order.
-- **Units** — mass, distance, height, temperature display units.
+- **Metrics** — per-metric authority/auto + fallback order, saved for all
+  metrics at once with a single button.
+- **Units** — mass, distance, height (cm or ft/in), temperature display units;
+  imperial by default.
 
 ---
 
@@ -466,6 +470,13 @@ tests/             # unit + integration
 
 ## Version history
 
+- **2.2.0** — Units & metric-preferences UX.
+  - Display units now default to **imperial** across the board: mass `lb`,
+    distance `mi`, temperature `°F`, height `ft/in`.
+  - Height offers two choices — `cm` or `ft/in` — and `ft/in` renders as whole
+    feet and inches (e.g. `5' 9"`) via a new `formatted` field on resolved points.
+  - The Metrics tab saves every metric's resolution preference at once with a
+    single button (one form) instead of one button per metric.
 - **2.1.0** — Read-path correctness & resilience.
   - Recover from a mid-fetch token rejection: providers classify 401/403 as an
     auth error and the aggregator refreshes the token once and retries (instead
