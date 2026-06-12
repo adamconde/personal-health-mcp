@@ -493,6 +493,17 @@ tests/             # unit + integration
 
 ## Version history
 
+- **2.4.0** — Read-path error visibility & Google query correctness.
+  - `health_get_metric` (and `compare_metric`) now surface per-provider failures
+    in an `errors` map instead of masking them as an empty result — a 4xx/auth
+    error no longer reads as "no data for this metric"; an explaining `note` is
+    set when an empty series is due to provider errors.
+  - Google Health: build the time-window filter from each data type's actual
+    time field — `interval.start_time`, `sample_time.physical_time`, or daily
+    `date` (`YYYY-MM-DD`) — fixing 400s on sample metrics (weight, heart rate,
+    SpO₂, …) and daily metrics (resting heart rate, respiratory rate).
+  - Removed Google `total_calories`: it has no standalone v4 dataPoints type
+    (lives only on the dailyRollUp endpoint). Still served by Oura/Withings.
 - **2.3.0** — GitHub sign-in for the web UI + IP-gated password.
   - The web UI can authenticate with **GitHub OAuth**, reusing the same OAuth app
     and `GITHUB_ALLOWED_USERS` allowlist that protect `/mcp` (web callback

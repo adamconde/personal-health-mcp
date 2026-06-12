@@ -9,7 +9,7 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastmcp import Client
-from tests.fakes import FakeProvider
+from tests.fakes import FailingProvider, FakeProvider
 
 from personal_health_mcp.app import AppContext, create_context
 from personal_health_mcp.models import DataPoint, MetricPref, ResolutionMode
@@ -123,6 +123,31 @@ async def test_compare_metric_lists_all_providers(ctx: AppContext):
             client, "health_compare_metric", {"metric": "weight", "start": "2030-01-01"}
         )
     assert set(out["providers"]) == {"withings", "oura"}
+
+
+async def test_get_metric_exposes_provider_error(tmp_path, settings):
+    # A provider API error (e.g. 403) must be surfaced via `errors`, not hidden
+    # behind an empty `points` list that reads as "no data for this metric".
+    from personal_health_mcp.aggregator import Aggregator
+
+    context = create_context(settings, database_url=f"sqlite+aiosqlite:///{tmp_path / 'err.db'}")
+    await context.startup()
+    context.providers = {"withings": FailingProvider("withings", {"weight": []})}
+
+    async def token_getter(name: str):
+        return "tok" if name in context.providers else None
+
+    context.aggregator = Aggregator(context.store, context.providers, token_getter)
+    try:
+        mcp = build_mcp(context)
+        async with Client(mcp) as client:
+            env = await _call(client, "health_get_metric", {"metric": "weight", "start": "2030-01-01"})
+        assert env["count"] == 0
+        assert env["points"] == []
+        assert "withings" in env["errors"]  # the failure is visible to the client
+        assert env["note"] and "withings" in env["note"]
+    finally:
+        await context.shutdown()
 
 
 async def test_set_authority_then_applied(ctx: AppContext):

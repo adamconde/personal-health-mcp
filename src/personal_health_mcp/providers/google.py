@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 
@@ -36,13 +36,21 @@ def _parse(value: str) -> datetime:
 
 
 def _typed_timestamp(typed: dict) -> datetime | None:
-    """Extract a start timestamp from a typed payload (interval or sample time)."""
+    """Extract a start timestamp from a typed payload.
+
+    Handles all three Google time shapes: interval (``interval.startTime``),
+    sample (``sampleTime.physicalTime``), and daily-summary (``date`` as a
+    ``{year, month, day}`` object, interpreted as midnight UTC).
+    """
     interval = typed.get("interval") or {}
     if interval.get("startTime"):
         return _parse(interval["startTime"])
     sample = typed.get("sampleTime") or {}
     if sample.get("physicalTime"):
         return _parse(sample["physicalTime"])
+    date = typed.get("date") or {}
+    if date.get("year") and date.get("month") and date.get("day"):
+        return datetime(int(date["year"]), int(date["month"]), int(date["day"]), tzinfo=UTC)
     return None
 
 
@@ -55,12 +63,39 @@ class _G:
         typed_key: camelCase key under which the typed payload sits in a point.
         unit: canonical unit of the produced value.
         extract: callable mapping the typed payload to a canonical float (or None).
+        time_kind: which time field the data type carries — ``"interval"``
+            (interval.start_time), ``"sample"`` (sample_time.physical_time), or
+            ``"daily"`` (a daily-summary ``date``). Determines the filter field;
+            using the wrong one yields a 400 from the API.
     """
 
     data_type: str
     typed_key: str
     unit: str
     extract: Callable[[dict], float | None]
+    time_kind: str = "interval"
+
+
+def _time_filter(field_root: str, time_kind: str, start: datetime, end: datetime) -> str:
+    """Build the AIP-160 time-window filter for a data type.
+
+    Google exposes a different filterable time field per shape (see
+    ``dataPoints.list``): interval types use ``interval.start_time``, sample
+    types ``sample_time.physical_time`` (both RFC-3339), and daily-summary types
+    a ``date`` (``YYYY-MM-DD``). The daily upper bound is the day *after* ``end``
+    so the inclusive end-day is covered.
+    """
+    if time_kind == "daily":
+        field = f"{field_root}.date"
+        lo = start.date().isoformat()
+        hi = (end.date() + timedelta(days=1)).isoformat()
+        return f'{field} >= "{lo}" AND {field} < "{hi}"'
+    field = (
+        f"{field_root}.sample_time.physical_time"
+        if time_kind == "sample"
+        else f"{field_root}.interval.start_time"
+    )
+    return f'{field} >= "{start.isoformat()}" AND {field} < "{end.isoformat()}"'
 
 
 def _field(name: str, scale: float = 1.0) -> Callable[[dict], float | None]:
@@ -106,33 +141,35 @@ class GoogleHealthProvider(HealthProvider):
         "active_calories": _G(
             "active-energy-burned", "activeEnergyBurned", "kcal", _field("kcal")
         ),
-        "total_calories": _G("total-calories", "totalCalories", "kcal", _field("kcal")),
-        "weight": _G("weight", "weight", "kg", _field("weightGrams", 0.001)),
-        "height": _G("height", "height", "m", _field("heightMillimeters", 0.001)),
-        "body_fat": _G("body-fat", "bodyFat", "%", _field("percentage")),
-        "heart_rate": _G("heart-rate", "heartRate", "bpm", _field("beatsPerMinute")),
+        # NOTE: no "total_calories" — Google's v4 dataPoints API has no standalone
+        # total-calories data type (`totalCalories` exists only on the separate
+        # dailyRollUp endpoint). Total energy is served by Oura/Withings instead.
+        "weight": _G("weight", "weight", "kg", _field("weightGrams", 0.001), "sample"),
+        "height": _G("height", "height", "m", _field("heightMillimeters", 0.001), "sample"),
+        "body_fat": _G("body-fat", "bodyFat", "%", _field("percentage"), "sample"),
+        "heart_rate": _G("heart-rate", "heartRate", "bpm", _field("beatsPerMinute"), "sample"),
         "resting_heart_rate": _G(
             "daily-resting-heart-rate", "dailyRestingHeartRate", "bpm",
-            _field("beatsPerMinute"),
+            _field("beatsPerMinute"), "daily",
         ),
         "hrv": _G(
             "heart-rate-variability", "heartRateVariability", "ms",
-            _field("rootMeanSquareOfSuccessiveDifferencesMilliseconds"),
+            _field("rootMeanSquareOfSuccessiveDifferencesMilliseconds"), "sample",
         ),
-        "spo2": _G("oxygen-saturation", "oxygenSaturation", "%", _field("percentage")),
+        "spo2": _G("oxygen-saturation", "oxygenSaturation", "%", _field("percentage"), "sample"),
         "respiratory_rate": _G(
             "daily-respiratory-rate", "dailyRespiratoryRate", "br/min",
-            _field("breathsPerMinute"),
+            _field("breathsPerMinute"), "daily",
         ),
         "body_temperature": _G(
             "core-body-temperature", "coreBodyTemperature", "C",
-            _field("temperatureCelsius"),
+            _field("temperatureCelsius"), "sample",
         ),
         "blood_glucose": _G(
             "blood-glucose", "bloodGlucose", "mg/dL",
-            _field("bloodGlucoseMilligramsPerDeciliter"),
+            _field("bloodGlucoseMilligramsPerDeciliter"), "sample",
         ),
-        "vo2_max": _G("vo2-max", "vo2Max", "ml/kg/min", _field("vo2Max")),
+        "vo2_max": _G("vo2-max", "vo2Max", "ml/kg/min", _field("vo2Max"), "sample"),
         "sleep_duration": _G("sleep", "sleep", "s", _sleep_asleep),
     }
 
@@ -154,10 +191,7 @@ class GoogleHealthProvider(HealthProvider):
         if spec is None:
             return []
         field_root = spec.data_type.replace("-", "_")
-        filt = (
-            f'{field_root}.interval.start_time >= "{start.isoformat()}" '
-            f'AND {field_root}.interval.start_time < "{end.isoformat()}"'
-        )
+        filt = _time_filter(field_root, spec.time_kind, start, end)
         points: list[DataPoint] = []
         async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
             page_token: str | None = None

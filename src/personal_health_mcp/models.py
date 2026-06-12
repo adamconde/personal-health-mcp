@@ -134,6 +134,9 @@ class ResponseEnvelope(BaseModel):
         end: Query window end.
         count: Number of resolved points.
         points: Resolved data points.
+        errors: Provider name -> error message for providers that failed to
+            return data (e.g. an auth/HTTP error). Lets a client distinguish a
+            provider failure from a genuine absence of data.
         note: Optional diagnostic.
     """
 
@@ -146,6 +149,7 @@ class ResponseEnvelope(BaseModel):
     end: datetime
     count: int
     points: list[ResolvedPoint]
+    errors: dict[str, str] = Field(default_factory=dict)
     note: str | None = None
 
 

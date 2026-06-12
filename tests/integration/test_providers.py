@@ -202,7 +202,9 @@ async def test_withings_refresh_keeps_old_token_if_absent():
 # ── Google ───────────────────────────────────────────────────────────────
 @respx.mock
 async def test_google_weight_grams_to_kg():
-    respx.get(
+    # Weight is a *sample* type: it carries sampleTime and must be filtered on
+    # sample_time.physical_time (not interval.start_time, which 400s).
+    route = respx.get(
         "https://health.googleapis.com/v4/users/me/dataTypes/weight/dataPoints"
     ).mock(
         return_value=httpx.Response(
@@ -212,7 +214,7 @@ async def test_google_weight_grams_to_kg():
                     {
                         "weight": {
                             "weightGrams": 75000,
-                            "interval": {"startTime": "2030-01-01T08:00:00Z"},
+                            "sampleTime": {"physicalTime": "2030-01-01T08:00:00Z"},
                         },
                         "dataSource": {"dataSourceName": "Fitbit"},
                     }
@@ -224,6 +226,39 @@ async def test_google_weight_grams_to_kg():
     assert points[0].value == 75.0
     assert points[0].unit == "kg"
     assert points[0].device == "Fitbit"
+    assert "weight.sample_time.physical_time" in route.calls.last.request.url.params["filter"]
+
+
+@respx.mock
+async def test_google_resting_heart_rate_daily_date_filter():
+    # Daily-summary type: filtered on `.date` with YYYY-MM-DD literals, and its
+    # timestamp comes from the {year, month, day} `date` object. This is the
+    # case that previously 400'd with an interval.start_time filter.
+    route = respx.get(
+        "https://health.googleapis.com/v4/users/me/dataTypes/daily-resting-heart-rate/dataPoints"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "dataPoints": [
+                    {
+                        "dailyRestingHeartRate": {
+                            "beatsPerMinute": 58,
+                            "date": {"year": 2030, "month": 1, "day": 3},
+                        }
+                    }
+                ]
+            },
+        )
+    )
+    points = await GoogleHealthProvider().fetch_metric("resting_heart_rate", START, END, "tok")
+    assert points[0].value == 58.0
+    assert points[0].unit == "bpm"
+    assert points[0].start == datetime(2030, 1, 3, tzinfo=UTC)
+    filt = route.calls.last.request.url.params["filter"]
+    assert 'daily_resting_heart_rate.date >= "2030-01-01"' in filt
+    # End (2030-01-08) is inclusive -> upper bound is the next day.
+    assert 'daily_resting_heart_rate.date < "2030-01-09"' in filt
 
 
 @respx.mock
@@ -262,6 +297,14 @@ async def test_google_distance_mm_to_m_with_paging():
     ]
     points = await GoogleHealthProvider().fetch_metric("distance", START, END, "tok")
     assert [p.value for p in points] == [5000.0, 1000.0]  # metres
+
+
+async def test_google_does_not_advertise_total_calories():
+    # Google's v4 dataPoints API has no standalone total-calories type, so the
+    # provider must not claim it (it would 400). active_calories is still served.
+    provider = GoogleHealthProvider()
+    assert provider.supports("active_calories")
+    assert not provider.supports("total_calories")
 
 
 @respx.mock

@@ -188,8 +188,11 @@ def register_tools(mcp: FastMCP, ctx: AppContext) -> None:
 
         Returns:
             dict: A response envelope ``{"providers", "metric", "unit", "mode",
-            "resolution", "start", "end", "count", "points", "note"}`` where each
-            point names the provider that supplied it.
+            "resolution", "start", "end", "count", "points", "errors", "note"}``
+            where each point names the provider that supplied it. ``errors`` maps
+            a provider name to a failure message (e.g. an auth/HTTP error); a
+            non-empty ``errors`` with ``count == 0`` means data could not be
+            fetched, NOT that the metric has no data.
         """
         get_metric(metric)  # validate; raises UnknownMetricError
         start_dt, end_dt = _day_bounds(start, end)

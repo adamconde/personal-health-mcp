@@ -75,16 +75,21 @@ class Aggregator:
         metric: str,
         start: datetime,
         end: datetime,
-    ) -> list[DataPoint]:
-        """Fetch a metric from a single provider, returning [] on any failure.
+    ) -> tuple[list[DataPoint], str | None]:
+        """Fetch a metric from a single provider.
+
+        Returns ``(points, error)``: ``error`` is a message string when the
+        fetch failed (so the caller can surface it instead of masking it as 'no
+        data'), or ``None`` on success. A missing token (provider not connected)
+        is not an error — it returns ``([], None)``.
 
         On a token rejection (:class:`ProviderAuthError`) the token is refreshed
         once and the fetch retried, so an expired/revoked token recovers instead
-        of being masked as 'no data'.
+        of failing.
         """
         token = await self._token_getter(name)
         if not token:
-            return []
+            return [], None
         provider = self._providers[name]
         try:
             try:
@@ -95,10 +100,11 @@ class Aggregator:
                     raise
                 points = await provider.fetch_metric(metric, start, end, token)
         except Exception as exc:  # noqa: BLE001 - isolate provider failures
-            await self._store.set_status(name, last_error=f"{metric}: {exc}")
-            return []
+            message = str(exc) or exc.__class__.__name__
+            await self._store.set_status(name, last_error=f"{metric}: {message}")
+            return [], message
         await self._store.set_status(name, last_sync=now_utc().isoformat(), clear_error=True)
-        return points
+        return points, None
 
     async def _gather(
         self,
@@ -106,12 +112,22 @@ class Aggregator:
         metric: str,
         start: datetime,
         end: datetime,
-    ) -> dict[str, list[DataPoint]]:
-        """Fetch ``metric`` from each provider in ``names`` concurrently."""
+    ) -> tuple[dict[str, list[DataPoint]], dict[str, str]]:
+        """Fetch ``metric`` from each provider in ``names`` concurrently.
+
+        Returns ``(points_by_provider, errors)`` where ``errors`` maps a
+        provider name to its failure message (absent when the provider succeeded).
+        """
         results = await asyncio.gather(
             *(self._fetch_one(name, metric, start, end) for name in names)
         )
-        return dict(zip(names, results, strict=True))
+        points_by_provider: dict[str, list[DataPoint]] = {}
+        errors: dict[str, str] = {}
+        for name, (points, error) in zip(names, results, strict=True):
+            points_by_provider[name] = points
+            if error is not None:
+                errors[name] = error
+        return points_by_provider, errors
 
     def _to_display(self, points: list[DataPoint], display_unit: str) -> list[ResolvedPoint]:
         """Convert canonical points to display-unit resolved points."""
@@ -162,12 +178,19 @@ class Aggregator:
             )
 
         candidates = self.providers_supporting(metric_key)
-        points_by_provider = await self._gather(candidates, metric_key, start, end)
+        points_by_provider, errors = await self._gather(candidates, metric_key, start, end)
         pref = await self._store.get_metric_pref(metric_key)
         # Auto-mode tie-break order is derived from the providers that returned
         # data (resolve ranks them in sorted-name order); no second token pass.
         result = resolve(metric, points_by_provider, pref)
         resolved = self._to_display(result.points, display_unit)
+
+        # When the series is empty *because* providers errored, say so — an empty
+        # result with no note otherwise reads as a genuine absence of data.
+        note = result.note
+        if errors and not resolved:
+            detail = "; ".join(f"{name}: {msg}" for name, msg in sorted(errors.items()))
+            note = f"No data returned; provider error(s): {detail}"
 
         return ResponseEnvelope(
             providers=result.providers,
@@ -179,7 +202,8 @@ class Aggregator:
             end=end,
             count=len(resolved),
             points=resolved,
-            note=result.note,
+            errors=errors,
+            note=note,
         )
 
     async def _explicit_provider(
@@ -193,6 +217,7 @@ class Aggregator:
     ) -> ResponseEnvelope:
         """Serve a metric from one named provider, bypassing resolution."""
         note = None
+        errors: dict[str, str] = {}
         if provider not in self._providers:
             note = f"Unknown provider {provider!r}."
             points: list[DataPoint] = []
@@ -200,8 +225,11 @@ class Aggregator:
             note = f"Provider {provider!r} does not supply {metric_key!r}."
             points = []
         else:
-            points = await self._fetch_one(provider, metric_key, start, end)
-            if not points:
+            points, error = await self._fetch_one(provider, metric_key, start, end)
+            if error is not None:
+                errors[provider] = error
+                note = f"Provider {provider!r} failed: {error}"
+            elif not points:
                 note = f"Provider {provider!r} returned no data for the window."
         resolved = self._to_display(sorted(points, key=lambda p: p.start), display_unit)
         return ResponseEnvelope(
@@ -214,6 +242,7 @@ class Aggregator:
             end=end,
             count=len(resolved),
             points=resolved,
+            errors=errors,
             note=note,
         )
 
@@ -229,14 +258,15 @@ class Aggregator:
         Useful for reconciling discrepancies before choosing an authority.
 
         Returns:
-            A dict with ``metric``, ``unit``, ``start``, ``end`` and a
-            ``providers`` mapping of name -> list of resolved points.
+            A dict with ``metric``, ``unit``, ``start``, ``end``, a ``providers``
+            mapping of name -> list of resolved points, and ``errors`` (name ->
+            failure message) for any provider that errored.
         """
         metric = get_metric(metric_key)
         unit_prefs = await self._store.get_unit_prefs()
         display_unit = resolve_display_unit(metric, unit_prefs, unit)
         candidates = self.providers_supporting(metric_key)
-        points_by_provider = await self._gather(candidates, metric_key, start, end)
+        points_by_provider, errors = await self._gather(candidates, metric_key, start, end)
         return {
             "metric": metric_key,
             "unit": display_unit,
@@ -246,4 +276,5 @@ class Aggregator:
                 name: [p.model_dump(mode="json") for p in self._to_display(pts, display_unit)]
                 for name, pts in points_by_provider.items()
             },
+            "errors": errors,
         }

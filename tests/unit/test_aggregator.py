@@ -83,10 +83,32 @@ async def test_failing_provider_is_isolated_and_recorded(store: Store):
     }
     agg = Aggregator(store, providers, make_token_getter({"withings", "oura"}))
     env = await agg.get_metric("weight", START, END)  # auto by default
-    # withings failed -> only oura contributes
+    # withings failed -> only oura contributes, but its failure is surfaced.
     assert env.providers == ["oura"]
+    assert "withings" in env.errors and "simulated provider failure" in env.errors["withings"]
     status = await store.get_status("withings")
     assert status is not None and status.last_error is not None
+
+
+async def test_provider_error_is_surfaced_not_masked_as_no_data(store: Store):
+    # A persistent auth failure (e.g. 403) with no recovery must NOT look like an
+    # empty 'no data' result: the envelope carries the error and an explaining note.
+    providers = {"withings": AuthExpiringProvider("withings", {"weight": [weight_dp("withings", 80.0)]})}
+    agg = Aggregator(store, providers, make_token_getter({"withings"}))  # no force_refresh
+    env = await agg.get_metric("weight", START, END)
+    assert env.count == 0
+    assert env.providers == []
+    assert "withings" in env.errors
+    assert env.note is not None and "withings" in env.note
+
+
+async def test_explicit_provider_surfaces_error(store: Store):
+    providers = {"withings": FailingProvider("withings", {"weight": []})}
+    agg = Aggregator(store, providers, make_token_getter({"withings"}))
+    env = await agg.get_metric("weight", START, END, provider="withings")
+    assert env.count == 0
+    assert env.errors.get("withings")
+    assert env.note is not None and "failed" in env.note
 
 
 async def test_auth_error_triggers_refresh_and_retry(store: Store):
