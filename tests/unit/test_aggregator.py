@@ -102,6 +102,27 @@ async def test_provider_error_is_surfaced_not_masked_as_no_data(store: Store):
     assert env.note is not None and "withings" in env.note
 
 
+async def test_provider_error_is_logged_to_error_log(store: Store):
+    providers = {"withings": FailingProvider("withings", {"weight": []})}
+    agg = Aggregator(store, providers, make_token_getter({"withings"}))
+    await agg.get_metric("weight", START, END)
+    log = await store.get_error_log()
+    assert log and log[0].provider == "withings"
+    assert "simulated provider failure" in log[0].message
+    assert log[0].level == "error"
+
+
+async def test_auth_error_logged_as_warning(store: Store):
+    # A 401/403 (ProviderAuthError) with no recovery is logged at warning severity.
+    providers = {
+        "withings": AuthExpiringProvider("withings", {"weight": [weight_dp("withings", 80.0)]})
+    }
+    agg = Aggregator(store, providers, make_token_getter({"withings"}))  # no force_refresh
+    await agg.get_metric("weight", START, END)
+    log = await store.get_error_log()
+    assert log and log[0].level == "warning"
+
+
 async def test_explicit_provider_surfaces_error(store: Store):
     providers = {"withings": FailingProvider("withings", {"weight": []})}
     agg = Aggregator(store, providers, make_token_getter({"withings"}))

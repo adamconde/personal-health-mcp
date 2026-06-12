@@ -145,6 +145,35 @@ async def test_status_upsert(store: Store):
     assert (await store.get_status("oura")).last_error is None
 
 
+async def test_error_log_records_newest_first(store: Store):
+    await store.log_error("oura", "first", "error")
+    await store.log_error("withings", "second", "warning")
+    rows = await store.get_error_log()
+    assert [r.message for r in rows] == ["second", "first"]  # newest first
+    assert rows[0].provider == "withings" and rows[0].level == "warning"
+
+
+async def test_set_status_with_error_appends_to_log_but_clear_does_not(store: Store):
+    await store.set_status("oura", last_error="boom", error_level="warning")
+    rows = await store.get_error_log()
+    assert len(rows) == 1
+    assert rows[0].provider == "oura" and rows[0].message == "boom" and rows[0].level == "warning"
+    # Clearing the error must not create a log entry.
+    await store.set_status("oura", clear_error=True)
+    assert len(await store.get_error_log()) == 1
+
+
+async def test_error_log_pruned_to_cap(store: Store):
+    from personal_health_mcp.storage import _ERROR_LOG_MAX
+
+    for i in range(_ERROR_LOG_MAX + 5):
+        await store.log_error("oura", f"e{i}")
+    rows = await store.get_error_log(limit=10_000)
+    assert len(rows) == _ERROR_LOG_MAX
+    assert rows[0].message == f"e{_ERROR_LOG_MAX + 4}"  # newest retained
+    assert all(r.message != "e0" for r in rows)  # oldest pruned
+
+
 async def test_app_meta(store: Store):
     assert await store.get_meta("schema_version") is None
     await store.set_meta("schema_version", "1")

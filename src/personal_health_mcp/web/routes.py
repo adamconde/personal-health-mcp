@@ -288,6 +288,29 @@ def create_web_routes(ctx: AppContext) -> list[BaseRoute]:
             )
         return RedirectResponse("/metrics?saved=1", status_code=303)
 
+    # ── logging ──────────────────────────────────────────────────────────
+    async def logging_page(request: Request) -> Response:
+        """Show the rolling provider-error log in a sortable/filterable table."""
+        rows = await ctx.store.get_error_log()
+        errors = [
+            {
+                "provider": r.provider,
+                "level": r.level,
+                "message": r.message,
+                "created_at": r.created_at,
+            }
+            for r in rows
+        ]
+        return render(
+            request,
+            "logging.html",
+            {
+                "errors": errors,
+                "providers": sorted({e["provider"] for e in errors}),
+                "levels": sorted({e["level"] for e in errors}),
+            },
+        )
+
     # ── unit preferences ─────────────────────────────────────────────────
     async def units_page(request: Request) -> Response:
         """Show and edit display-unit preferences per group."""
@@ -327,6 +350,7 @@ def create_web_routes(ctx: AppContext) -> list[BaseRoute]:
         Route("/metrics", save_metrics, methods=["POST"]),
         Route("/units", units_page, methods=["GET"]),
         Route("/units", save_units, methods=["POST"]),
+        Route("/logging", logging_page, methods=["GET"]),
     ]
 
 
@@ -347,6 +371,7 @@ def _nav(request: Request) -> list[dict]:
         ("/providers", "Providers", "devices"),
         ("/metrics", "Metrics", "tune"),
         ("/units", "Units", "straighten"),
+        ("/logging", "Logging", "logging"),
     ]
     return [
         {"href": h, "label": label, "icon": icon, "active": path == h}
@@ -370,7 +395,6 @@ async def _provider_rows(ctx: AppContext) -> list[dict]:
                 "credentials_ready": await ctx.store.resolve_credentials(name) is not None,
                 "connected": bool(status and status.connected),
                 "last_sync": status.last_sync if status else None,
-                "last_error": status.last_error if status else None,
                 "scopes": provider.oauth.scopes,
                 "redirect_uri": ctx.settings.redirect_uri(name),
                 "credentials_url": provider.credentials_url,

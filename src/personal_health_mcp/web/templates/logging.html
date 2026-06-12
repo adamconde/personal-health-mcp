@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Logging — Health MCP{% endblock %}
+{% block content %}
+<style>
+  .log-controls { display: flex; gap: .75rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  #log-table th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+  #log-table th.sortable::after { content: " \2195"; opacity: .35; }
+  #log-table th.sortable[data-dir="asc"]::after { content: " \2191"; opacity: .9; }
+  #log-table th.sortable[data-dir="desc"]::after { content: " \2193"; opacity: .9; }
+  #log-table tbody tr { cursor: pointer; }
+  #log-table td.log-preview {
+    max-width: 32rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .log-dialog { border: none; border-radius: 12px; max-width: min(48rem, 92vw); padding: 1.25rem; }
+  .log-dialog::backdrop { background: rgba(0,0,0,.5); }
+  .log-detail {
+    white-space: pre-wrap; word-break: break-word; background: var(--md-surface-variant, #eee);
+    color: var(--md-on-surface-variant, #222); padding: .75rem; border-radius: 8px;
+    max-height: 50vh; overflow: auto; font-size: .85rem;
+  }
+</style>
+
+<h1>Logging</h1>
+<p class="body-medium muted">Provider API errors, newest first. Click a row to view the full error.
+The {{ errors | length }} most recent entries are retained.</p>
+
+{% if errors %}
+<div class="log-controls">
+  <div class="field grow">
+    <input id="log-search" placeholder=" " autocomplete="off">
+    <label for="log-search">Filter text</label>
+  </div>
+  <div class="field field--select field--floated">
+    <select id="log-provider">
+      <option value="">All providers</option>
+      {% for p in providers %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+    </select>
+    <label for="log-provider">Provider</label>
+  </div>
+  <div class="field field--select field--floated">
+    <select id="log-level">
+      <option value="">All severities</option>
+      {% for l in levels %}<option value="{{ l }}">{{ l }}</option>{% endfor %}
+    </select>
+    <label for="log-level">Severity</label>
+  </div>
+</div>
+
+<div class="card card--elevated" style="padding:0; overflow-x:auto;">
+  <table class="table" id="log-table">
+    <thead>
+      <tr>
+        <th class="sortable" data-key="level">Severity</th>
+        <th class="sortable" data-key="provider">Provider</th>
+        <th class="sortable" data-key="created" data-dir="desc">Date / time</th>
+        <th class="sortable" data-key="message">Error</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in errors %}
+      <tr class="log-row" tabindex="0"
+          data-level="{{ e.level }}" data-provider="{{ e.provider }}"
+          data-created="{{ e.created_at }}" data-message="{{ e.message }}">
+        <td><span class="chip chip--{{ 'error' if e.level == 'error' else 'neutral' }}">{{ e.level }}</span></td>
+        <td>{{ e.provider }}</td>
+        <td class="log-time" data-iso="{{ e.created_at }}">{{ e.created_at }}</td>
+        <td class="log-preview">{{ e.message }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="body-medium muted" id="log-empty" hidden>No matching entries.</p>
+{% else %}
+<div class="card card--outlined"><p class="body-medium muted">No errors logged. 🎉</p></div>
+{% endif %}
+
+<dialog id="log-dialog" class="log-dialog">
+  <h2 class="title-large" style="margin-top:0;">Error detail</h2>
+  <p class="body-medium"><strong>Provider:</strong> <span id="ld-provider"></span></p>
+  <p class="body-medium"><strong>Severity:</strong> <span id="ld-level"></span></p>
+  <p class="body-medium"><strong>Time:</strong> <span id="ld-time"></span></p>
+  <pre class="log-detail" id="ld-message"></pre>
+  <div class="actions"><button class="btn" type="button" id="ld-close">Close</button></div>
+</dialog>
+
+<script src="/static/logging.js" defer></script>
+{% endblock %}

@@ -14,7 +14,7 @@ import json
 import os
 from datetime import datetime
 
-from sqlalchemy import String, Text, select
+from sqlalchemy import String, Text, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -92,6 +92,27 @@ class AppMeta(Base):
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[str] = mapped_column(Text)
+
+
+class ErrorLogRow(Base):
+    """A logged provider error, shown on the Logging page.
+
+    A rolling history (capped at :data:`_ERROR_LOG_MAX`) of failures recorded via
+    :meth:`Store.set_status`/:meth:`Store.log_error`, distinct from the single
+    ``ProviderStatus.last_error`` (which is only the most recent).
+    """
+
+    __tablename__ = "error_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(String(32), index=True)
+    level: Mapped[str] = mapped_column(String(16), default="error")
+    message: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(String(40))
+
+
+# Cap on retained error-log rows; oldest are pruned on each insert.
+_ERROR_LOG_MAX = 500
 
 
 def _now_iso() -> str:
@@ -240,8 +261,14 @@ class Store:
         last_sync: str | None = None,
         last_error: str | None = None,
         clear_error: bool = False,
+        error_level: str = "error",
     ) -> None:
-        """Upsert provider connection status / diagnostics."""
+        """Upsert provider connection status / diagnostics.
+
+        When ``last_error`` is set, it is both stored as the provider's most
+        recent error and appended to the rolling error log (see
+        :meth:`log_error`) with severity ``error_level``.
+        """
         async with self._session() as s, s.begin():
             row = await s.get(ProviderStatus, provider)
             if row is None:
@@ -255,11 +282,34 @@ class Store:
                 row.last_error = None
             elif last_error is not None:
                 row.last_error = last_error
+        if last_error is not None and not clear_error:
+            await self.log_error(provider, last_error, error_level)
 
     async def get_status(self, provider: str) -> ProviderStatus | None:
         """Return the status row for ``provider``, or None."""
         async with self._session() as s:
             return await s.get(ProviderStatus, provider)
+
+    # ── error log ────────────────────────────────────────────────────────
+    async def log_error(self, provider: str, message: str, level: str = "error") -> None:
+        """Append an error to the rolling log, pruning to the newest rows."""
+        async with self._session() as s, s.begin():
+            s.add(
+                ErrorLogRow(
+                    provider=provider, level=level, message=message, created_at=_now_iso()
+                )
+            )
+        async with self._session() as s, s.begin():
+            stale = select(ErrorLogRow.id).order_by(ErrorLogRow.id.desc()).offset(_ERROR_LOG_MAX)
+            await s.execute(delete(ErrorLogRow).where(ErrorLogRow.id.in_(stale)))
+
+    async def get_error_log(self, limit: int = _ERROR_LOG_MAX) -> list[ErrorLogRow]:
+        """Return logged errors, newest first (up to ``limit``)."""
+        async with self._session() as s:
+            result = await s.execute(
+                select(ErrorLogRow).order_by(ErrorLogRow.id.desc()).limit(limit)
+            )
+            return list(result.scalars().all())
 
     # ── metric preferences ───────────────────────────────────────────────
     async def get_metric_pref(self, metric: str) -> MetricPref:

@@ -11,8 +11,7 @@
     <tr>
       <td class="title-medium">{{ p.display_name }}</td>
       <td>{% if p.credentials_ready %}<span class="chip chip--ok">configured</span>{% else %}<span class="chip chip--error">missing</span>{% endif %}</td>
-      <td>{% if p.connected %}<span class="chip chip--ok">connected</span>{% else %}<span class="chip chip--neutral">disconnected</span>{% endif %}
-          {% if p.last_error %}<div class="body-medium text-error">{{ p.last_error }}</div>{% endif %}</td>
+      <td>{% if p.connected %}<span class="chip chip--ok">connected</span>{% else %}<span class="chip chip--neutral">disconnected</span>{% endif %}</td>
       <td>{{ p.metric_count }}</td>
       <td class="muted body-medium">{{ p.last_sync or "—" }}</td>
     </tr>

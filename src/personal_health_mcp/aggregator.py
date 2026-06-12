@@ -101,7 +101,10 @@ class Aggregator:
                 points = await provider.fetch_metric(metric, start, end, token)
         except Exception as exc:  # noqa: BLE001 - isolate provider failures
             message = str(exc) or exc.__class__.__name__
-            await self._store.set_status(name, last_error=f"{metric}: {message}")
+            level = "warning" if isinstance(exc, ProviderAuthError) else "error"
+            await self._store.set_status(
+                name, last_error=f"{metric}: {message}", error_level=level
+            )
             return [], message
         await self._store.set_status(name, last_sync=now_utc().isoformat(), clear_error=True)
         return points, None

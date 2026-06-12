@@ -393,6 +393,9 @@ weight, falling back to Google.”_
   metrics at once with a single button.
 - **Units** — mass, distance, height (cm or ft/in), temperature display units;
   imperial by default.
+- **Logging** — rolling history of provider API errors in a sortable, filterable
+  table (severity, provider, time, error preview); click a row for the full
+  message. Replaces the inline error text that used to appear on Providers/Dashboard.
 
 ### Web UI login
 
@@ -493,6 +496,15 @@ tests/             # unit + integration
 
 ## Version history
 
+- **2.5.0** — Logging tab for provider errors.
+  - New **Logging** page: a rolling, capped (newest 500) history of provider API
+    errors in a sortable/filterable table — severity, provider, timestamp, and a
+    one-line preview; click any row for the full error. Auth failures (401/403)
+    are recorded at `warning` severity, others at `error`.
+  - Errors are persisted to a new `error_log` table (every `set_status` that
+    records a `last_error` now also appends to the log).
+  - Removed the inline error text from the Providers and Dashboard pages (status
+    chips remain); error detail now lives on the Logging page.
 - **2.4.0** — Read-path error visibility & Google query correctness.
   - `health_get_metric` (and `compare_metric`) now surface per-provider failures
     in an `errors` map instead of masking them as an empty result — a 4xx/auth

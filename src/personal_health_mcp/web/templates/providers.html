@@ -15,7 +15,6 @@ redirect URI shown below in the provider's developer console <em>exactly</em>.</
       {% if p.secret_configured %}<span class="chip chip--ok">secret set</span>{% else %}<span class="chip chip--error">no secret</span>{% endif %}
     </div>
   </div>
-  {% if p.last_error %}<div class="banner banner--error">{{ p.last_error }}</div>{% endif %}
   {% if p.credentials_url %}
   <p class="body-medium">Get your client ID &amp; secret from the
      <a href="{{ p.credentials_url }}" target="_blank" rel="noopener noreferrer">{{ p.display_name }} developer console ↗</a>.

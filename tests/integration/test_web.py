@@ -108,6 +108,26 @@ async def test_password_login_allowed_from_lan_ip(web):
         assert resp.headers["location"] == "/"
 
 
+async def test_logging_page_lists_errors(web):
+    client, ctx = web
+    await _login(client)
+    await ctx.store.log_error("oura", "Oura authentication failed (403).", "warning")
+    resp = await client.get("/logging")
+    assert resp.status_code == 200
+    assert "Oura authentication failed (403)." in resp.text
+    assert "/static/logging.js" in resp.text  # behavior wired up
+    assert ">Logging<" in resp.text  # nav entry present
+
+
+async def test_providers_page_no_longer_shows_error_text(web):
+    client, ctx = web
+    await _login(client)
+    await ctx.store.set_status("oura", last_error="leaky boom detail")
+    resp = await client.get("/providers")
+    assert resp.status_code == 200
+    assert "leaky boom detail" not in resp.text  # moved to the Logging page
+
+
 async def test_security_headers_present(web):
     client, _ctx = web
     resp = await client.get("/healthz")
