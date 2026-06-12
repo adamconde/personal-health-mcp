@@ -1,0 +1,47 @@
+# Build-context excludes. The image only needs pyproject.toml, README.md and
+# src/ (see deploy/Dockerfile); everything below is either sensitive, large, or
+# irrelevant to the build. Keeping it out shrinks the context sent to the daemon
+# and ensures secrets can never be baked into a layer.
+
+# Secrets & local config
+.env
+*.env
+!.env.example
+
+# Databases / data
+*.db
+*.db-wal
+*.db-shm
+data/
+
+# Version control & CI
+.git
+.gitignore
+.github
+
+# Python build/test/caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Not needed in the image
+tests/
+reference-docs/
+Makefile
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
