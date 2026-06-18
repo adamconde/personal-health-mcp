@@ -54,7 +54,7 @@ class Settings(BaseSettings):
         database_path: Filesystem path to the SQLite database.
         log_level: Logging verbosity.
         *_client_id / *_client_secret: Optional provider OAuth credentials (fallback).
-        cf_tunnel_token / caddy_domain: Deployment-overlay specific values.
+        cf_tunnel_token: Cloudflare Tunnel connector token (deployment-specific).
     """
 
     model_config = SettingsConfigDict(
@@ -83,7 +83,6 @@ class Settings(BaseSettings):
     withings_client_secret: str = Field(default="")
 
     cf_tunnel_token: str = Field(default="")
-    caddy_domain: str = Field(default="")
 
     # ── MCP endpoint auth via GitHub OAuth (optional) ────────────────────
     # When both id+secret are set, the /mcp endpoint uses GitHub OAuth instead

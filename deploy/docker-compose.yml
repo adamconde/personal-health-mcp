@@ -1,17 +1,27 @@
-# Base compose: the app + its data volume only.
-# The app is NOT published to the host — expose it with one of the overlays:
-# Run from the repo root and pass --env-file .env (Compose's ${VAR} interpolation
-# otherwise loads .env from this file's directory, not your cwd):
-#   Cloudflare: docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/compose.cloudflared.yml up -d
-#   Caddy:      docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/compose.caddy.yml up -d
+# Single-file deploy: the published app image + a Cloudflare Tunnel that
+# publishes it. This pulls a prebuilt image from GHCR — no local build.
+# To build from source instead, use deploy/docker-compose-dev.yml.
 #
-# To pull a prebuilt image instead of building, set IMAGE and remove `build:`.
+# Run from the REPO ROOT and pass --env-file .env (Compose's ${VAR}
+# interpolation otherwise loads .env from this file's directory (deploy/),
+# not your cwd, so CF_TUNNEL_TOKEN resolves empty):
+#   docker compose --env-file .env -f deploy/docker-compose.yml up -d
+#
+# Pin a release by overriding IMAGE (default: the latest published image):
+#   IMAGE=ghcr.io/adamconde/personal-health-mcp:2.5.0 docker compose ... up -d
+#
+# Cloudflare Tunnel prereqs:
+#   1. A domain added to your (free) Cloudflare account.
+#   2. A *token-managed* (dashboard) tunnel. Copy its long connector token into
+#      your repo-root .env as CF_TUNNEL_TOKEN. The token is NOT the tunnel UUID
+#      or name — it's the base64-ish string from the "Install connector" screen
+#      (or `cloudflared tunnel token <NAME>`).
+#   3. In the Zero Trust dashboard, route your hostname (e.g. health.example.com)
+#      to the service URL  http://app:8000.
+# Cloudflare terminates TLS at its edge; PUBLIC_BASE_URL must be that hostname.
 services:
   app:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-    image: ${IMAGE:-personal-health-mcp:local}
+    image: ${IMAGE:-ghcr.io/adamconde/personal-health-mcp:latest}
     env_file:
       - ../.env
     environment:
@@ -20,6 +30,19 @@ services:
       - "8000" # internal network only; never `ports:` here
     volumes:
       - health-data:/data
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    # `tunnel run` reads the connector token from TUNNEL_TOKEN. If the token is
+    # empty/unset, cloudflared falls back to expecting a tunnel name and errors
+    # with "requires the ID or name of the tunnel". The `:?` guard makes
+    # `docker compose up` fail with a clear message in that case instead.
+    command: tunnel --no-autoupdate run
+    environment:
+      - "TUNNEL_TOKEN=${CF_TUNNEL_TOKEN:?CF_TUNNEL_TOKEN did not resolve. Set it in your repo-root .env AND run compose with --env-file .env from the repo root (interpolation reads .env from this file's dir, not your cwd).}"
+    depends_on:
+      - app
     restart: unless-stopped
 
 volumes:

@@ -1,6 +1,0 @@
-# Caddy automatically obtains and renews a Let's Encrypt certificate for the
-# domain, redirects HTTP->HTTPS, and reverse-proxies everything to the app.
-{$CADDY_DOMAIN} {
-	encode zstd gzip
-	reverse_proxy app:8000
-}

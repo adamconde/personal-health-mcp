@@ -1,8 +1,13 @@
-# Overlay: expose the app via a Cloudflare Tunnel (no open inbound ports).
+# Dev deploy: BUILDS the app from source, plus a Cloudflare Tunnel that
+# publishes it. For the published-image variant (no local build), use
+# deploy/docker-compose.yml.
 #
-#   docker compose -f docker-compose.yml -f compose.cloudflared.yml up -d
+# Run from the REPO ROOT and pass --env-file .env (Compose's ${VAR}
+# interpolation otherwise loads .env from this file's directory (deploy/),
+# not your cwd, so CF_TUNNEL_TOKEN resolves empty):
+#   docker compose --env-file .env -f deploy/docker-compose-dev.yml up -d
 #
-# Prereqs:
+# Cloudflare Tunnel prereqs:
 #   1. A domain added to your (free) Cloudflare account.
 #   2. A *token-managed* (dashboard) tunnel. Copy its long connector token into
 #      your repo-root .env as CF_TUNNEL_TOKEN. The token is NOT the tunnel UUID
@@ -11,12 +16,22 @@
 #   3. In the Zero Trust dashboard, route your hostname (e.g. health.example.com)
 #      to the service URL  http://app:8000.
 # Cloudflare terminates TLS at its edge; PUBLIC_BASE_URL must be that hostname.
-#
-# Run from the REPO ROOT with --env-file .env. The flag is REQUIRED: Compose's
-# ${CF_TUNNEL_TOKEN} interpolation otherwise loads .env from this file's
-# directory (deploy/), not your cwd, so the token resolves empty.
-#   docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/compose.cloudflared.yml up -d
 services:
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: ${IMAGE:-personal-health-mcp:local}
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_PATH: /data/health.db
+    expose:
+      - "8000" # internal network only; never `ports:` here
+    volumes:
+      - health-data:/data
+    restart: unless-stopped
+
   cloudflared:
     image: cloudflare/cloudflared:latest
     # `tunnel run` reads the connector token from TUNNEL_TOKEN. If the token is
@@ -29,3 +44,6 @@ services:
     depends_on:
       - app
     restart: unless-stopped
+
+volumes:
+  health-data:

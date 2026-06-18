@@ -30,10 +30,9 @@ machine) and a small web UI for managing provider connections and preferences.
   - [Provider setup (OAuth apps)](#provider-setup-oauth-apps)
   - [Install: from GHCR or build locally](#install-from-ghcr-or-build-locally)
     - [Sample `docker-compose.yml`](#sample-docker-composeyml)
-  - [Hosting options (pick one)](#hosting-options-pick-one)
-    - [Option A — Cloudflare Tunnel (no open ports)](#option-a--cloudflare-tunnel-no-open-ports)
-    - [Option B — Caddy reverse proxy (Let's Encrypt)](#option-b--caddy-reverse-proxy-lets-encrypt)
-    - [Option C — LAN / development](#option-c--lan--development)
+  - [Hosting](#hosting)
+    - [Cloudflare Tunnel (no open ports)](#cloudflare-tunnel-no-open-ports)
+    - [LAN / development](#lan--development)
   - [Connecting MCP clients](#connecting-mcp-clients)
     - [Authenticating with GitHub OAuth (optional)](#authenticating-with-github-oauth-optional)
     - [Tools](#tools)
@@ -72,8 +71,8 @@ machine) and a small web UI for managing provider connections and preferences.
 ## Architecture at a glance
 
 ```text
-MCP clients (Claude Desktop, …) ──HTTPS──▶ [ Cloudflare Tunnel  OR  Caddy ]
-                                                      │  (TLS terminated here)
+MCP clients (Claude Desktop, …) ──HTTPS──▶ [   Cloudflare Tunnel   ]
+                                                      │  (TLS terminated at CF edge)
                                                       ▼  http (internal docker net)
                                             ┌─────────────────────────┐
                                             │  app (uvicorn)          │
@@ -95,7 +94,7 @@ for the provider abstraction, resolution engine, and unit layer.
 ## Prerequisites
 
 - **Docker** and **Docker Compose**.
-- **A domain you own.** Both supported hosting options need a stable HTTPS
+- **A domain you own**, added to Cloudflare. Hosting needs a stable HTTPS
   hostname because OAuth redirect URIs must be registered with each provider and
   cannot change.
 - A **developer account / app** with each provider you want to use (Google
@@ -109,8 +108,7 @@ for the provider abstraction, resolution engine, and unit layer.
 git clone https://github.com/adamconde/personal-health-mcp.git
 cd personal-health-mcp
 cp .env.example .env        # then fill it in (see Configuration)
-# pick ONE hosting overlay (see Hosting options):
-docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/compose.caddy.yml up -d
+docker compose --env-file .env -f deploy/docker-compose.yml up -d
 ```
 
 Open `https://<your-domain>/`, sign in (with GitHub if configured, otherwise
@@ -118,10 +116,10 @@ Open `https://<your-domain>/`, sign in (with GitHub if configured, otherwise
 click **Connect**, then set your **Metrics** and **Units** preferences.
 
 > **Always pass `--env-file .env` and run from the repo root.** Compose's
-> `${VAR}` interpolation (used by the overlays for `CF_TUNNEL_TOKEN` /
-> `CADDY_DOMAIN`) loads its `.env` from the **compose file's directory**
-> (`deploy/`), not your shell's working directory — so without `--env-file .env`
-> those variables resolve empty even though your repo-root `.env` is correct.
+> `${VAR}` interpolation (used for `CF_TUNNEL_TOKEN`) loads its `.env` from the
+> **compose file's directory** (`deploy/`), not your shell's working directory —
+> so without `--env-file .env` `CF_TUNNEL_TOKEN` resolves empty even though your
+> repo-root `.env` is correct.
 
 ---
 
@@ -144,13 +142,12 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 | `GITHUB_ALLOWED_USERS`                          | optional   | Comma-separated GitHub logins allowed when GitHub OAuth is on (set it — blank = any account). Applies to web + MCP. |
 | `WEB_PASSWORD`                                  | ✅         | Web UI password (argon2id-hashed at boot). Break-glass when GitHub login is on: accepted only from `WEB_PASSWORD_ALLOWED_CIDRS`. |
 | `WEB_PASSWORD_ALLOWED_CIDRS`                    | –          | Comma-separated CIDRs from which password login is accepted. Blank = private/loopback LAN ranges ("same VLAN").  |
-| `TRUSTED_PROXY_CIDRS`                           | proxy      | CIDRs of your reverse proxy (e.g. the Docker network). Required behind Caddy/Cloudflare for the IP gate to see the real client. |
+| `TRUSTED_PROXY_CIDRS`                           | proxy      | CIDRs of your reverse proxy (e.g. the Docker network). Required behind the Cloudflare Tunnel for the IP gate to see the real client. |
 | `SESSION_SECRET`                                | ✅         | Signs session cookies.                                                                                           |
 | `TOKEN_ENC_KEY`                                 | ✅         | Fernet key encrypting tokens & client secrets at rest. Comma-separate multiple keys (newest first) to rotate.    |
 | `DATABASE_PATH`                                 | –          | SQLite path (default `/data/health.db`).                                                                         |
 | `LOG_LEVEL`                                     | –          | `debug`/`info`/`warning`/`error`.                                                                                |
-| `CADDY_DOMAIN`                                  | Caddy      | Domain Caddy serves + gets a cert for.                                                                           |
-| `CF_TUNNEL_TOKEN`                               | Cloudflare | Named-tunnel token.                                                                                              |
+| `CF_TUNNEL_TOKEN`                               | Cloudflare | Named-tunnel connector token.                                                                                   |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`     | optional   | Headless fallback — normally set in the UI.                                                                      |
 | `OURA_CLIENT_ID` / `OURA_CLIENT_SECRET`         | optional   | Headless fallback.                                                                                               |
 | `WITHINGS_CLIENT_ID` / `WITHINGS_CLIENT_SECRET` | optional   | Headless fallback.                                                                                               |
@@ -190,14 +187,21 @@ and click **Connect** to run the OAuth flow.
 
 ## Install: from GHCR or build locally
 
-**Pull a published image** (set `IMAGE` and drop the `build:` section, or just
-reference it):
+Two compose files ship in `deploy/`:
+
+- **`docker-compose.yml`** — pulls the **published image** from GHCR
+  (`ghcr.io/adamconde/personal-health-mcp:latest`). This is the default for
+  running the server; no build toolchain needed. Override `IMAGE` to pin a tag.
+- **`docker-compose-dev.yml`** — **builds the image from source** in this repo.
+  Use it when developing or running unreleased changes.
+
+**Pull a published image** directly (the default compose file does this for you):
 
 ```bash
 docker pull ghcr.io/adamconde/personal-health-mcp:latest
 ```
 
-**Or build locally** (default in the compose files):
+**Or build locally** (what `docker-compose-dev.yml` does):
 
 ```bash
 docker build -f deploy/Dockerfile -t personal-health-mcp:local .
@@ -205,7 +209,7 @@ docker build -f deploy/Dockerfile -t personal-health-mcp:local .
 
 ### Sample `docker-compose.yml`
 
-A complete single-file example (Caddy variant). Adjust the image/domain:
+A complete single-file example. Adjust the image:
 
 ```yaml
 services:
@@ -218,32 +222,26 @@ services:
     volumes: ["health-data:/data"]
     restart: unless-stopped
 
-  caddy:
-    image: caddy:2
-    ports: ["80:80", "443:443"]
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
     environment:
-      CADDY_DOMAIN: ${CADDY_DOMAIN}
-    volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
+      - "TUNNEL_TOKEN=${CF_TUNNEL_TOKEN:?set CF_TUNNEL_TOKEN in .env}"
     depends_on: [app]
     restart: unless-stopped
 
 volumes:
   health-data:
-  caddy-data:
-  caddy-config:
 ```
 
 ---
 
-## Hosting options (pick one)
+## Hosting
 
-Both publish a stable HTTPS hostname (needed for OAuth) and keep the app itself
-unpublished on the internal Docker network.
+A Cloudflare Tunnel publishes a stable HTTPS hostname (needed for OAuth) and
+keeps the app itself unpublished on the internal Docker network.
 
-### Option A — Cloudflare Tunnel (no open ports)
+### Cloudflare Tunnel (no open ports)
 
 Free on a Cloudflare account; you only need a domain added to Cloudflare.
 
@@ -256,28 +254,12 @@ Free on a Cloudflare account; you only need a domain added to Cloudflare.
 5. Launch:
 
    ```bash
-   docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/compose.cloudflared.yml up -d
+   docker compose --env-file .env -f deploy/docker-compose.yml up -d
    ```
 
 No inbound ports are opened; Cloudflare terminates TLS at its edge.
 
-### Option B — Caddy reverse proxy (Let's Encrypt)
-
-For when you can port-forward.
-
-1. Point a DNS `A`/`AAAA` record for `health.example.com` at your host.
-2. Ensure ports **80** and **443** are reachable from the internet.
-3. In `.env`: set `CADDY_DOMAIN=health.example.com` and
-   `PUBLIC_BASE_URL=https://health.example.com`.
-4. Launch:
-
-   ```bash
-   docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/compose.caddy.yml up -d
-   ```
-
-Caddy obtains and renews the certificate automatically.
-
-### Option C — LAN / development
+### LAN / development
 
 You can run the app directly for development:
 
@@ -287,7 +269,7 @@ make run    # uvicorn on http://localhost:8000
 ```
 
 OAuth still requires a stable **HTTPS** redirect URL, so for real provider
-connections use Option A or B (or a tunnel to your dev box).
+connections use the Cloudflare Tunnel (or a tunnel to your dev box).
 
 ---
 
@@ -487,7 +469,7 @@ src/personal_health_mcp/
   tools.py         # MCP tools
   providers/       # base + google/oura/withings
   web/             # routes, templates, security middleware
-deploy/            # Dockerfile, compose (+ cloudflared/caddy overlays), Caddyfile
+deploy/            # Dockerfile, docker-compose.yml (GHCR image) + -dev.yml (build)
 .github/workflows/ # ci.yml, release.yml (GHCR)
 tests/             # unit + integration
 ```
@@ -496,6 +478,16 @@ tests/             # unit + integration
 
 ## Version history
 
+- **2.6.0** — Simplified deployment: Cloudflare Tunnel only, two compose files.
+  - Removed the **Caddy / Let's Encrypt** hosting option (`Caddyfile`,
+    `compose.caddy.yml`, the `CADDY_DOMAIN` env var, and the `caddy_domain`
+    config field). Cloudflare Tunnel is now the sole supported public-hosting
+    path. A stale `CADDY_DOMAIN` in `.env` is harmless — config ignores it.
+  - Collapsed the base + cloudflared overlay into a **single self-contained
+    compose file**. `deploy/docker-compose.yml` now runs the published GHCR
+    image (`ghcr.io/adamconde/personal-health-mcp:latest`); the new
+    `deploy/docker-compose-dev.yml` builds from source for development.
+  - Run: `docker compose --env-file .env -f deploy/docker-compose.yml up -d`.
 - **2.5.0** — Logging tab for provider errors.
   - New **Logging** page: a rolling, capped (newest 500) history of provider API
     errors in a sortable/filterable table — severity, provider, timestamp, and a
